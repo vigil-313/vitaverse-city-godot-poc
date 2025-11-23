@@ -1,0 +1,685 @@
+[gd_scene load_steps=15 format=3 uid="uid://cafe_building_001"]
+
+[ext_resource type="Script" path="res://scripts/door.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/interactable.gd" id="2"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_brick"]
+albedo_color = Color(0.55, 0.27, 0.2, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
+albedo_color = Color(0.6, 0.5, 0.4, 1)
+roughness = 0.7
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wood"]
+albedo_color = Color(0.4, 0.3, 0.2, 1)
+roughness = 0.7
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_window"]
+albedo_color = Color(0.5, 0.7, 0.9, 0.5)
+transparency = 1
+roughness = 0.1
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ceiling"]
+albedo_color = Color(0.85, 0.85, 0.8, 1)
+roughness = 0.9
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_coffee"]
+albedo_color = Color(0.8, 0.5, 0.3, 1)
+roughness = 0.4
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_metal"]
+albedo_color = Color(0.6, 0.6, 0.65, 1)
+metallic = 0.8
+roughness = 0.3
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ceramic"]
+albedo_color = Color(0.95, 0.95, 0.9, 1)
+roughness = 0.2
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_chalkboard"]
+albedo_color = Color(0.15, 0.15, 0.15, 1)
+roughness = 0.9
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_small"]
+size = Vector3(0.3, 0.3, 0.3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_small"]
+size = Vector3(0.3, 0.3, 0.3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_door"]
+size = Vector3(2, 3, 0.3)
+
+[node name="CafeBuilding" type="Node3D"]
+
+[node name="Exterior" type="Node3D" parent="."]
+
+[node name="Floor" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
+material_override = SubResource("StandardMaterial3D_floor")
+use_collision = true
+size = Vector3(12, 0.2, 10)
+
+[node name="BackWall" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, -5)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = true
+size = Vector3(12, 6, 0.3)
+
+[node name="LeftWall" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 3, 0)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = true
+size = Vector3(0.3, 6, 10)
+
+[node name="RightWall" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 3, 0)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = true
+size = Vector3(0.3, 6, 10)
+
+[node name="FrontWallLeft" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 3, 5)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = true
+size = Vector3(4, 6, 0.3)
+
+[node name="FrontWallRight" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 3, 5)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = true
+size = Vector3(4, 6, 0.3)
+
+[node name="FrontWallTop" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.5, 5)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = true
+size = Vector3(4, 3, 0.3)
+
+[node name="Ceiling" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6, 0)
+material_override = SubResource("StandardMaterial3D_ceiling")
+use_collision = true
+size = Vector3(12, 0.2, 10)
+
+[node name="Roof" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0.2, 0, 1, 0, -0.2, 0, 1, 0, 6.8, 0)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = false
+size = Vector3(13, 0.3, 11)
+
+[node name="RoofPeak" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.5, 0)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = false
+size = Vector3(13, 1, 0.3)
+
+[node name="Trim" type="Node3D" parent="Exterior"]
+
+[node name="Baseboard" type="CSGBox3D" parent="Exterior/Trim"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = false
+size = Vector3(12.2, 0.3, 10.2)
+
+[node name="RoofTrim" type="CSGBox3D" parent="Exterior/Trim"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6.1, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = false
+size = Vector3(12.3, 0.2, 10.3)
+
+[node name="CornerTrimLeft" type="CSGBox3D" parent="Exterior/Trim"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.1, 3, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = false
+size = Vector3(0.3, 6, 10)
+
+[node name="CornerTrimRight" type="CSGBox3D" parent="Exterior/Trim"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.1, 3, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = false
+size = Vector3(0.3, 6, 10)
+
+[node name="Window1" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 3, -2)
+material_override = SubResource("StandardMaterial3D_window")
+size = Vector3(0.35, 2, 2)
+
+[node name="Window2" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 3, 2)
+material_override = SubResource("StandardMaterial3D_window")
+size = Vector3(0.35, 2, 2)
+
+[node name="Window3" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 3, -2)
+material_override = SubResource("StandardMaterial3D_window")
+size = Vector3(0.35, 2, 2)
+
+[node name="Window4" type="CSGBox3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 3, 2)
+material_override = SubResource("StandardMaterial3D_window")
+size = Vector3(0.35, 2, 2)
+
+[node name="WindowFrames" type="Node3D" parent="Exterior"]
+
+[node name="W1Top" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 4, -2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 0.1, 2.2)
+
+[node name="W1Bottom" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 2, -2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 0.1, 2.2)
+
+[node name="W1Left" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 3, -3)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 2.2, 0.1)
+
+[node name="W1Right" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 3, -1)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 2.2, 0.1)
+
+[node name="W1Sill" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.2, 1.9, -2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.3, 0.15, 2.4)
+
+[node name="W2Top" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 4, 2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 0.1, 2.2)
+
+[node name="W2Bottom" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 2, 2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 0.1, 2.2)
+
+[node name="W2Left" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 3, 1)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 2.2, 0.1)
+
+[node name="W2Right" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 3, 3)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 2.2, 0.1)
+
+[node name="W2Sill" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.2, 1.9, 2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.3, 0.15, 2.4)
+
+[node name="W3Top" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 4, -2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 0.1, 2.2)
+
+[node name="W3Bottom" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 2, -2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 0.1, 2.2)
+
+[node name="W3Left" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 3, -3)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 2.2, 0.1)
+
+[node name="W3Right" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 3, -1)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 2.2, 0.1)
+
+[node name="W3Sill" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.2, 1.9, -2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.3, 0.15, 2.4)
+
+[node name="W4Top" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 4, 2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 0.1, 2.2)
+
+[node name="W4Bottom" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 2, 2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 0.1, 2.2)
+
+[node name="W4Left" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 3, 1)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 2.2, 0.1)
+
+[node name="W4Right" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 3, 3)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 2.2, 0.1)
+
+[node name="W4Sill" type="CSGBox3D" parent="Exterior/WindowFrames"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.2, 1.9, 2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.3, 0.15, 2.4)
+
+[node name="Interior" type="Node3D" parent="."]
+
+[node name="Counter" type="CSGBox3D" parent="Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.5, 1, -3)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(4, 2, 1.5)
+
+[node name="CounterTop" type="CSGBox3D" parent="Interior/Counter"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(4.2, 0.2, 1.7)
+
+[node name="Table1" type="CSGBox3D" parent="Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(2, 1, 1.5)
+
+[node name="Table2" type="CSGBox3D" parent="Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.5, -3)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(2, 1, 1.5)
+
+[node name="Chair1" type="CSGBox3D" parent="Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.2, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(0.6, 1, 0.6)
+
+[node name="ChairBack1" type="CSGBox3D" parent="Interior/Chair1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.1, 1, 0.6)
+
+[node name="Chair2" type="CSGBox3D" parent="Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(0.6, 1, 0.6)
+
+[node name="ChairBack2" type="CSGBox3D" parent="Interior/Chair2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.1, 1, 0.6)
+
+[node name="Chair3" type="CSGBox3D" parent="Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.2, 0.5, -3)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(0.6, 1, 0.6)
+
+[node name="ChairBack3" type="CSGBox3D" parent="Interior/Chair3"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.1, 1, 0.6)
+
+[node name="Chair4" type="CSGBox3D" parent="Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8, 0.5, -3)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(0.6, 1, 0.6)
+
+[node name="ChairBack4" type="CSGBox3D" parent="Interior/Chair4"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.1, 1, 0.6)
+
+[node name="EspressoMachine" type="CSGBox3D" parent="Interior/Counter"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1.3, 0)
+material_override = SubResource("StandardMaterial3D_metal")
+size = Vector3(0.8, 0.6, 0.8)
+
+[node name="MachineTop" type="CSGBox3D" parent="Interior/Counter/EspressoMachine"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_metal")
+size = Vector3(0.6, 0.4, 0.6)
+
+[node name="Cup1" type="CSGCylinder3D" parent="Interior/Counter"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 1.25, 0)
+material_override = SubResource("StandardMaterial3D_ceramic")
+radius = 0.15
+height = 0.3
+
+[node name="Cup2" type="CSGCylinder3D" parent="Interior/Counter"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 1.25, 0)
+material_override = SubResource("StandardMaterial3D_ceramic")
+radius = 0.15
+height = 0.3
+
+[node name="Shelf" type="CSGBox3D" parent="Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.4, 3, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.2, 2, 4)
+
+[node name="ShelfBoard1" type="CSGBox3D" parent="Interior/Shelf"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.4, 0.1, 4)
+
+[node name="ShelfBoard2" type="CSGBox3D" parent="Interior/Shelf"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2, 0, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.4, 0.1, 4)
+
+[node name="ShelfBoard3" type="CSGBox3D" parent="Interior/Shelf"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2, -0.5, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.4, 0.1, 4)
+
+[node name="MenuBoard" type="CSGBox3D" parent="Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.4, 4.5, -2)
+material_override = SubResource("StandardMaterial3D_chalkboard")
+size = Vector3(0.1, 1.5, 2)
+
+[node name="Chimney" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0, -2)
+
+[node name="ChimneyBase" type="CSGBox3D" parent="Chimney"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7.5, 0)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = false
+size = Vector3(1.2, 3, 1.2)
+
+[node name="ChimneyTop" type="CSGBox3D" parent="Chimney"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9.2, 0)
+material_override = SubResource("StandardMaterial3D_brick")
+use_collision = false
+size = Vector3(1.4, 0.4, 1.4)
+
+[node name="OutdoorSeating" type="Node3D" parent="."]
+
+[node name="Table1" type="Node3D" parent="OutdoorSeating"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0, 7)
+
+[node name="TableTop" type="CSGCylinder3D" parent="OutdoorSeating/Table1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+radius = 0.6
+height = 0.1
+
+[node name="TableLeg" type="CSGCylinder3D" parent="OutdoorSeating/Table1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0)
+material_override = SubResource("StandardMaterial3D_metal")
+use_collision = true
+radius = 0.1
+height = 0.7
+
+[node name="Chair1" type="Node3D" parent="OutdoorSeating/Table1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8, 0, 0)
+
+[node name="Seat" type="CSGBox3D" parent="OutdoorSeating/Table1/Chair1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(0.5, 0.1, 0.5)
+
+[node name="Back" type="CSGBox3D" parent="OutdoorSeating/Table1/Chair1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2, 0.7, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.1, 0.6, 0.5)
+
+[node name="Chair2" type="Node3D" parent="OutdoorSeating/Table1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8, 0, 0)
+
+[node name="Seat" type="CSGBox3D" parent="OutdoorSeating/Table1/Chair2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(0.5, 0.1, 0.5)
+
+[node name="Back" type="CSGBox3D" parent="OutdoorSeating/Table1/Chair2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, 0.7, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.1, 0.6, 0.5)
+
+[node name="Umbrella" type="Node3D" parent="OutdoorSeating/Table1"]
+
+[node name="Pole" type="CSGCylinder3D" parent="OutdoorSeating/Table1/Umbrella"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+material_override = SubResource("StandardMaterial3D_metal")
+radius = 0.05
+height = 2
+
+[node name="Top" type="CSGCylinder3D" parent="OutdoorSeating/Table1/Umbrella"]
+transform = Transform3D(1, 0, 0.2, 0, 1, 0, -0.2, 0, 1, 0, 2.5, 0)
+material_override = SubResource("StandardMaterial3D_coffee")
+radius = 1.2
+height = 0.3
+
+[node name="Table2" type="Node3D" parent="OutdoorSeating"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, 7)
+
+[node name="TableTop" type="CSGCylinder3D" parent="OutdoorSeating/Table2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+radius = 0.6
+height = 0.1
+
+[node name="TableLeg" type="CSGCylinder3D" parent="OutdoorSeating/Table2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0)
+material_override = SubResource("StandardMaterial3D_metal")
+use_collision = true
+radius = 0.1
+height = 0.7
+
+[node name="Chair1" type="Node3D" parent="OutdoorSeating/Table2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8, 0, 0)
+
+[node name="Seat" type="CSGBox3D" parent="OutdoorSeating/Table2/Chair1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(0.5, 0.1, 0.5)
+
+[node name="Back" type="CSGBox3D" parent="OutdoorSeating/Table2/Chair1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2, 0.7, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.1, 0.6, 0.5)
+
+[node name="Chair2" type="Node3D" parent="OutdoorSeating/Table2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8, 0, 0)
+
+[node name="Seat" type="CSGBox3D" parent="OutdoorSeating/Table2/Chair2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+use_collision = true
+size = Vector3(0.5, 0.1, 0.5)
+
+[node name="Back" type="CSGBox3D" parent="OutdoorSeating/Table2/Chair2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, 0.7, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.1, 0.6, 0.5)
+
+[node name="Umbrella" type="Node3D" parent="OutdoorSeating/Table2"]
+
+[node name="Pole" type="CSGCylinder3D" parent="OutdoorSeating/Table2/Umbrella"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+material_override = SubResource("StandardMaterial3D_metal")
+radius = 0.05
+height = 2
+
+[node name="Top" type="CSGCylinder3D" parent="OutdoorSeating/Table2/Umbrella"]
+transform = Transform3D(1, 0, 0.2, 0, 1, 0, -0.2, 0, 1, 0, 2.5, 0)
+material_override = SubResource("StandardMaterial3D_coffee")
+radius = 1.2
+height = 0.3
+
+[node name="Lights" type="Node3D" parent="."]
+
+[node name="InteriorLight1" type="OmniLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 5, 0)
+light_color = Color(1, 0.9, 0.7, 1)
+light_energy = 2.0
+omni_range = 10.0
+
+[node name="InteriorLight2" type="OmniLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 5, 0)
+light_color = Color(1, 0.9, 0.7, 1)
+light_energy = 2.0
+omni_range = 10.0
+
+[node name="Interactables" type="Node3D" parent="."]
+
+[node name="CoffeeCup" type="StaticBody3D" parent="Interactables"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 1.5, 0)
+script = ExtResource("2")
+interaction_prompt = "Press E to pick up coffee cup"
+item_name = "Coffee Cup"
+description = "A warm cup of Seattle's finest coffee"
+can_pick_up = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Interactables/CoffeeCup"]
+material_override = SubResource("StandardMaterial3D_coffee")
+mesh = SubResource("BoxMesh_small")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Interactables/CoffeeCup"]
+shape = SubResource("BoxShape3D_small")
+
+[node name="Note" type="StaticBody3D" parent="Interactables"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 1.5, -3)
+script = ExtResource("2")
+interaction_prompt = "Press E to read note"
+item_name = "Menu"
+description = "Today's special: Pumpkin Spice Latte"
+can_pick_up = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Interactables/Note"]
+mesh = SubResource("BoxMesh_small")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Interactables/Note"]
+shape = SubResource("BoxShape3D_small")
+
+[node name="Door" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 1.5, 5)
+script = ExtResource("1")
+
+[node name="DoorMesh" type="CSGBox3D" parent="Door"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(2, 3, 0.2)
+
+[node name="DoorHandle" type="CSGBox3D" parent="Door/DoorMesh"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8, 0, 0.15)
+size = Vector3(0.15, 0.15, 0.15)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Door"]
+shape = SubResource("BoxShape3D_door")
+
+[node name="Decorations" type="Node3D" parent="."]
+
+[node name="CafeSign" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.2, 5.3)
+material_override = SubResource("StandardMaterial3D_coffee")
+size = Vector3(3.5, 0.8, 0.15)
+
+[node name="SignBorder" type="CSGBox3D" parent="Decorations/CafeSign"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.05)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(3.7, 1, 0.1)
+
+[node name="SignText1" type="CSGBox3D" parent="Decorations/CafeSign"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8, 0, 0.1)
+size = Vector3(0.3, 0.5, 0.05)
+
+[node name="SignText2" type="CSGBox3D" parent="Decorations/CafeSign"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 0, 0.1)
+size = Vector3(0.3, 0.5, 0.05)
+
+[node name="SignText3" type="CSGBox3D" parent="Decorations/CafeSign"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2, 0, 0.1)
+size = Vector3(0.3, 0.5, 0.05)
+
+[node name="SignText4" type="CSGBox3D" parent="Decorations/CafeSign"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7, 0, 0.1)
+size = Vector3(0.3, 0.5, 0.05)
+
+[node name="WindowBox1" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 1.8, -2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.2, 0.3, 2.2)
+
+[node name="Flowers1" type="CSGBox3D" parent="Decorations/WindowBox1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+size = Vector3(0.2, 0.4, 2.0)
+
+[node name="WindowBox2" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.05, 1.8, 2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.2, 0.3, 2.2)
+
+[node name="Flowers2" type="CSGBox3D" parent="Decorations/WindowBox2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+size = Vector3(0.2, 0.4, 2.0)
+
+[node name="WindowBox3" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 1.8, -2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.2, 0.3, 2.2)
+
+[node name="Flowers3" type="CSGBox3D" parent="Decorations/WindowBox3"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+size = Vector3(0.2, 0.4, 2.0)
+
+[node name="WindowBox4" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.05, 1.8, 2)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.2, 0.3, 2.2)
+
+[node name="Flowers4" type="CSGBox3D" parent="Decorations/WindowBox4"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+size = Vector3(0.2, 0.4, 2.0)
+
+[node name="DoorFrame" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.1, 1.5, 5.05)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 3.2, 0.15)
+
+[node name="DoorFrame2" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.1, 1.5, 5.05)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(0.15, 3.2, 0.15)
+
+[node name="DoorFrame3" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.1, 5.05)
+material_override = SubResource("StandardMaterial3D_wood")
+size = Vector3(2.4, 0.15, 0.15)
+
+[node name="Plant1" type="CSGCylinder3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 1, 3)
+material_override = SubResource("StandardMaterial3D_brick")
+radius = 0.3
+height = 2.0
+
+[node name="PlantTop1" type="CSGSphere3D" parent="Decorations/Plant1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 0)
+radius = 0.6
+
+[node name="Plant2" type="CSGCylinder3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 1, 3)
+material_override = SubResource("StandardMaterial3D_brick")
+radius = 0.3
+height = 2.0
+
+[node name="PlantTop2" type="CSGSphere3D" parent="Decorations/Plant2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 0)
+radius = 0.6
+
+[node name="Sign" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5, 5.2)
+material_override = SubResource("StandardMaterial3D_coffee")
+size = Vector3(3, 0.8, 0.1)
+
+[node name="Awning" type="CSGBox3D" parent="Decorations"]
+transform = Transform3D(1, 0, 0, 0, 0.866, 0.5, 0, -0.5, 0.866, 0, 3.5, 5.5)
+material_override = SubResource("StandardMaterial3D_brick")
+size = Vector3(5, 0.1, 1.5)

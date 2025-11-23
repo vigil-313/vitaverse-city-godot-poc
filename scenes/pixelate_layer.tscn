@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3 uid="uid://pixelate_layer_001"]
+
+[ext_resource type="Shader" path="res://shaders/pixelate.gdshader" id="1"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_1"]
+shader = ExtResource("1")
+shader_parameter/pixel_size = 3
+
+[node name="PixelateLayer" type="CanvasLayer"]
+layer = 128
+
+[node name="ColorRect" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_1")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
