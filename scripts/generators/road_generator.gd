@@ -262,7 +262,10 @@ static func _create_road_mesh(path: Array, road_center: Vector2, width: float, b
 		vertices.append(left_bot_2)
 		vertices.append(left_bot_1)
 
-		var left_normal = (left_top_2 - left_top_1).cross(Vector3.DOWN).normalized()
+		# Calculate proper outward-facing normal for left edge
+		var left_edge_dir = (left_top_2 - left_top_1).normalized()
+		var left_down = (left_bot_1 - left_top_1).normalized()
+		var left_normal = left_edge_dir.cross(left_down).normalized()
 		for j in range(4):
 			normals.append(left_normal)
 
@@ -285,7 +288,10 @@ static func _create_road_mesh(path: Array, road_center: Vector2, width: float, b
 		vertices.append(right_bot_2)
 		vertices.append(right_bot_1)
 
-		var right_normal = (right_top_2 - right_top_1).cross(Vector3.UP).normalized()
+		# Calculate proper outward-facing normal for right edge
+		var right_edge_dir = (right_top_2 - right_top_1).normalized()
+		var right_down = (right_bot_1 - right_top_1).normalized()
+		var right_normal = right_down.cross(right_edge_dir).normalized()
 		for j in range(4):
 			normals.append(right_normal)
 
