@@ -24,8 +24,11 @@ const MATERIALS = {
 	"plaster": {"color": Color(0.9, 0.9, 0.85), "roughness": 0.6, "texture_scale": 5.0}
 }
 
+## Wall thickness for volumetric walls (in meters)
+const WALL_THICKNESS = 0.25  # 25cm thick walls (realistic for buildings)
+
 ## Generate complete building from OSM data
-static func create_building(osm_data: Dictionary, parent: Node3D, detailed: bool = true) -> Node3D:
+static func create_building(osm_data: Dictionary, parent: Node, detailed: bool = true) -> Node3D:
 	var building = Node3D.new()
 	var building_name = osm_data.get("name", "")
 	if building_name == "":
@@ -101,15 +104,49 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 	var roof_uvs = PackedVector2Array()
 	var roof_indices = PackedInt32Array()
 
+	# Surface 4: Floor slabs (horizontal concrete floors)
+	var floor_vertices = PackedVector3Array()
+	var floor_normals = PackedVector3Array()
+	var floor_uvs = PackedVector2Array()
+	var floor_indices = PackedInt32Array()
+
 	# Generate walls with windows (now populates separate arrays)
 	_generate_walls_multi_surface(footprint, center, height, levels, osm_data, detailed,
 		wall_vertices, wall_normals, wall_uvs, wall_indices,
 		window_vertices, window_normals, window_uvs, window_indices,
 		frame_vertices, frame_normals, frame_uvs, frame_indices)
 
+	# Generate architectural details - adds to wall geometry
+	if detailed:
+		_generate_building_foundation(footprint, center, wall_vertices, wall_normals, wall_uvs, wall_indices)
+		if levels > 1:  # Only for multi-story buildings
+			_generate_cornice(footprint, center, height, wall_vertices, wall_normals, wall_uvs, wall_indices)
+			_generate_floor_ledges(footprint, center, height, levels, wall_vertices, wall_normals, wall_uvs, wall_indices)
+			# Add floor slabs (horizontal concrete floors at each level)
+			_generate_floor_slabs(footprint, center, height, levels, floor_vertices, floor_normals, floor_uvs, floor_indices)
+
 	# Generate roof (separate surface for OSM colors/materials)
-	var roof_shape = osm_data.get("roof:shape", "flat")
+	var roof_shape = osm_data.get("roof:shape", "")
+	var building_id = int(osm_data.get("id", 0))
+
+	# TEMPORARY: Use flat roofs for all buildings until proper roof generation is implemented
+	# The sloped roof algorithms (gabled/hipped/pyramidal) create messy geometry on irregular footprints
+	# TODO: Implement proper roof generation module in future
+	if roof_shape == "" or roof_shape in ["gabled", "hipped", "pyramidal"]:
+		roof_shape = "flat"  # Force flat roofs for now
+
+	# Future roof inference code (disabled):
+	# if roof_shape == "":
+	#	var building_type = osm_data.get("building_type", "")
+	#	match building_type:
+	#		"house", "residential", "apartments":
+	#			var shapes = ["gabled", "hipped"]
+	#			roof_shape = shapes[building_id % shapes.size()]
+	#		_:
+	#			roof_shape = "flat"
+
 	_generate_roof(footprint, center, height, roof_shape, osm_data, roof_vertices, roof_normals, roof_uvs, roof_indices)
+
 
 	# Build surfaces and track actual indices (they shift based on what's added)
 	var current_surface_index = 0
@@ -117,6 +154,7 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 	var window_surface_index = -1
 	var frame_surface_index = -1
 	var roof_surface_index = -1
+	var floor_surface_index = -1
 
 	# Surface: Walls (always present)
 	var wall_arrays = []
@@ -165,6 +203,18 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 		roof_surface_index = current_surface_index
 		current_surface_index += 1
 
+	# Surface: Floor slabs (if any)
+	if floor_vertices.size() > 0:
+		var floor_arrays = []
+		floor_arrays.resize(Mesh.ARRAY_MAX)
+		floor_arrays[Mesh.ARRAY_VERTEX] = floor_vertices
+		floor_arrays[Mesh.ARRAY_NORMAL] = floor_normals
+		floor_arrays[Mesh.ARRAY_TEX_UV] = floor_uvs
+		floor_arrays[Mesh.ARRAY_INDEX] = floor_indices
+		array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, floor_arrays)
+		floor_surface_index = current_surface_index
+		current_surface_index += 1
+
 	mesh_instance.mesh = array_mesh
 
 	# Apply materials to each surface using tracked indices
@@ -176,6 +226,8 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 		mesh_instance.set_surface_override_material(frame_surface_index, _create_frame_material())
 	if roof_surface_index >= 0:
 		mesh_instance.set_surface_override_material(roof_surface_index, _create_roof_material(osm_data))
+	if floor_surface_index >= 0:
+		mesh_instance.set_surface_override_material(floor_surface_index, _create_floor_material())
 
 	return mesh_instance
 
@@ -226,9 +278,9 @@ static func _create_wall_segment_multi_surface(p1: Vector2, p2: Vector2, height:
 			})
 
 	if windows_per_floor.is_empty() or not detailed:
-		# Simple wall without windows
+		# Simple wall without windows (volumetric)
 		var base_index = wall_vertices.size()
-		_add_wall_quad(p1, p2, 0.0, height, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
+		_add_volumetric_wall_quad(p1, p2, 0.0, height, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
 	else:
 		# Complex wall with window cutouts
 		for floor_num in range(levels):
@@ -281,9 +333,9 @@ static func _create_wall_with_windows_multi_surface(p1: Vector2, p2: Vector2, fl
 	frame_vertices: PackedVector3Array, frame_normals: PackedVector3Array, frame_uvs: PackedVector2Array, frame_indices: PackedInt32Array):
 
 	if windows.is_empty():
-		# No windows - create full wall
+		# No windows - create full volumetric wall
 		var base_index = wall_vertices.size()
-		_add_wall_quad(p1, p2, floor_bottom, floor_top, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
+		_add_volumetric_wall_quad(p1, p2, floor_bottom, floor_top, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
 		return
 
 	var floor_height = floor_top - floor_bottom
@@ -306,21 +358,24 @@ static func _create_wall_with_windows_multi_surface(p1: Vector2, p2: Vector2, fl
 			var seg_p1 = p1.lerp(p2, prev_end_t)
 			var seg_p2 = p1.lerp(p2, window_left_t)
 			var base_index = wall_vertices.size()
-			_add_wall_quad(seg_p1, seg_p2, floor_bottom, floor_top, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
+			_add_volumetric_wall_quad(seg_p1, seg_p2, floor_bottom, floor_top, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
 
 		# Wall segment above window
 		if window_top < floor_top - 0.01:
 			var seg_p1 = p1.lerp(p2, window_left_t)
 			var seg_p2 = p1.lerp(p2, window_right_t)
 			var base_index = wall_vertices.size()
-			_add_wall_quad(seg_p1, seg_p2, window_top, floor_top, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
+			_add_volumetric_wall_quad(seg_p1, seg_p2, window_top, floor_top, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
 
 		# Wall segment below window
 		if window_bottom > floor_bottom + 0.01:
 			var seg_p1 = p1.lerp(p2, window_left_t)
 			var seg_p2 = p1.lerp(p2, window_right_t)
 			var base_index = wall_vertices.size()
-			_add_wall_quad(seg_p1, seg_p2, floor_bottom, window_bottom, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
+			_add_volumetric_wall_quad(seg_p1, seg_p2, floor_bottom, window_bottom, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
+
+		# Add window reveal (wall edge around window opening - goes to wall surface)
+		_add_window_reveal(p1, p2, window_left_t, window_right_t, window_bottom, window_top, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices)
 
 		# Add window glass (goes to window surface)
 		var window_base = window_vertices.size()
@@ -337,7 +392,7 @@ static func _create_wall_with_windows_multi_surface(p1: Vector2, p2: Vector2, fl
 		var seg_p1 = p1.lerp(p2, prev_end_t)
 		var seg_p2 = p2
 		var base_index = wall_vertices.size()
-		_add_wall_quad(seg_p1, seg_p2, floor_bottom, floor_top, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
+		_add_volumetric_wall_quad(seg_p1, seg_p2, floor_bottom, floor_top, wall_normal, wall_vertices, wall_normals, wall_uvs, wall_indices, base_index)
 
 ## Create wall quad with windows cut out (old single-surface version - unused)
 static func _create_wall_with_windows(p1: Vector2, p2: Vector2, floor_bottom: float, floor_top: float, windows: Array, wall_normal: Vector3, wall_length: float, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array):
@@ -430,13 +485,300 @@ static func _add_wall_quad(p1: Vector2, p2: Vector2, y_bottom: float, y_top: flo
 	indices.append(base_index + 2)
 	indices.append(base_index + 3)
 
+## Add a volumetric wall quad with thickness (creates 6 faces: outer, inner, and 4 edges)
+static func _add_volumetric_wall_quad(p1: Vector2, p2: Vector2, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, base_index: int, wall_thickness: float = WALL_THICKNESS):
+	# Calculate inward offset for inner wall face
+	var thickness_offset = Vector3(normal.x * -wall_thickness, 0, normal.z * -wall_thickness)
+
+	# Outer face vertices (visible from outside)
+	var outer_v1 = Vector3(p1.x, y_bottom, -p1.y)
+	var outer_v2 = Vector3(p2.x, y_bottom, -p2.y)
+	var outer_v3 = Vector3(p2.x, y_top, -p2.y)
+	var outer_v4 = Vector3(p1.x, y_top, -p1.y)
+
+	# Inner face vertices (offset inward)
+	var inner_v1 = outer_v1 + thickness_offset
+	var inner_v2 = outer_v2 + thickness_offset
+	var inner_v3 = outer_v3 + thickness_offset
+	var inner_v4 = outer_v4 + thickness_offset
+
+	var wall_width = p1.distance_to(p2)
+	var wall_height = y_top - y_bottom
+
+	# === OUTER FACE (visible from outside) ===
+	vertices.append(outer_v1)
+	vertices.append(outer_v2)
+	vertices.append(outer_v3)
+	vertices.append(outer_v4)
+
+	for i in range(4):
+		normals.append(normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(wall_width, 0))
+	uvs.append(Vector2(wall_width, wall_height))
+	uvs.append(Vector2(0, wall_height))
+
+	# Outer face triangles
+	indices.append(base_index + 0)
+	indices.append(base_index + 1)
+	indices.append(base_index + 2)
+	indices.append(base_index + 0)
+	indices.append(base_index + 2)
+	indices.append(base_index + 3)
+
+	# === INNER FACE (visible from inside, reversed winding) ===
+	var inner_base = base_index + 4
+	vertices.append(inner_v1)
+	vertices.append(inner_v2)
+	vertices.append(inner_v3)
+	vertices.append(inner_v4)
+
+	var inner_normal = -normal  # Flip normal for inner face
+	for i in range(4):
+		normals.append(inner_normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(wall_width, 0))
+	uvs.append(Vector2(wall_width, wall_height))
+	uvs.append(Vector2(0, wall_height))
+
+	# Inner face triangles (reversed winding)
+	indices.append(inner_base + 0)
+	indices.append(inner_base + 3)
+	indices.append(inner_base + 2)
+	indices.append(inner_base + 0)
+	indices.append(inner_base + 2)
+	indices.append(inner_base + 1)
+
+	# === TOP EDGE (connecting outer top to inner top) ===
+	var top_base = base_index + 8
+	vertices.append(outer_v4)  # Outer left top
+	vertices.append(outer_v3)  # Outer right top
+	vertices.append(inner_v3)  # Inner right top
+	vertices.append(inner_v4)  # Inner left top
+
+	var top_normal = Vector3.UP
+	for i in range(4):
+		normals.append(top_normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(wall_width, 0))
+	uvs.append(Vector2(wall_width, wall_thickness))
+	uvs.append(Vector2(0, wall_thickness))
+
+	indices.append(top_base + 0)
+	indices.append(top_base + 1)
+	indices.append(top_base + 2)
+	indices.append(top_base + 0)
+	indices.append(top_base + 2)
+	indices.append(top_base + 3)
+
+	# === BOTTOM EDGE (connecting outer bottom to inner bottom) ===
+	var bottom_base = base_index + 12
+	vertices.append(outer_v1)  # Outer left bottom
+	vertices.append(outer_v2)  # Outer right bottom
+	vertices.append(inner_v2)  # Inner right bottom
+	vertices.append(inner_v1)  # Inner left bottom
+
+	var bottom_normal = Vector3.DOWN
+	for i in range(4):
+		normals.append(bottom_normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(wall_width, 0))
+	uvs.append(Vector2(wall_width, wall_thickness))
+	uvs.append(Vector2(0, wall_thickness))
+
+	# Reversed winding for bottom (facing down)
+	indices.append(bottom_base + 0)
+	indices.append(bottom_base + 3)
+	indices.append(bottom_base + 2)
+	indices.append(bottom_base + 0)
+	indices.append(bottom_base + 2)
+	indices.append(bottom_base + 1)
+
+	# === LEFT EDGE (connecting outer left to inner left) ===
+	var left_base = base_index + 16
+	var left_dir = (p2 - p1).normalized()
+	var left_normal = Vector3(-left_dir.x, 0, left_dir.y)  # Perpendicular to wall, pointing left
+
+	vertices.append(outer_v1)  # Outer bottom
+	vertices.append(outer_v4)  # Outer top
+	vertices.append(inner_v4)  # Inner top
+	vertices.append(inner_v1)  # Inner bottom
+
+	for i in range(4):
+		normals.append(left_normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(0, wall_height))
+	uvs.append(Vector2(wall_thickness, wall_height))
+	uvs.append(Vector2(wall_thickness, 0))
+
+	indices.append(left_base + 0)
+	indices.append(left_base + 3)
+	indices.append(left_base + 2)
+	indices.append(left_base + 0)
+	indices.append(left_base + 2)
+	indices.append(left_base + 1)
+
+	# === RIGHT EDGE (connecting outer right to inner right) ===
+	var right_base = base_index + 20
+	var right_normal = -left_normal  # Opposite of left normal
+
+	vertices.append(outer_v2)  # Outer bottom
+	vertices.append(outer_v3)  # Outer top
+	vertices.append(inner_v3)  # Inner top
+	vertices.append(inner_v2)  # Inner bottom
+
+	for i in range(4):
+		normals.append(right_normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(0, wall_height))
+	uvs.append(Vector2(wall_thickness, wall_height))
+	uvs.append(Vector2(wall_thickness, 0))
+
+	indices.append(right_base + 0)
+	indices.append(right_base + 1)
+	indices.append(right_base + 2)
+	indices.append(right_base + 0)
+	indices.append(right_base + 2)
+	indices.append(right_base + 3)
+
+	# Total: 24 vertices (4 outer + 4 inner + 4 top + 4 bottom + 4 left + 4 right)
+	# Total: 12 triangles (2 outer + 2 inner + 2 top + 2 bottom + 2 left + 2 right)
+
+## Add window reveal (wall edges around window opening showing wall thickness)
+static func _add_window_reveal(p1: Vector2, p2: Vector2, t1: float, t2: float, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, recess_depth: float = 0.15):
+	var window_p1 = p1.lerp(p2, t1)
+	var window_p2 = p1.lerp(p2, t2)
+	var window_width = window_p1.distance_to(window_p2)
+	var window_height = y_top - y_bottom
+
+	# Outer edge (at wall outer face)
+	var outer_offset = Vector3(0, 0, 0)  # At wall surface
+	# Inner edge (recessed into wall)
+	var inner_offset = Vector3(normal.x * -recess_depth, 0, normal.z * -recess_depth)
+
+	# Outer corners
+	var outer_bl = Vector3(window_p1.x, y_bottom, -window_p1.y) + outer_offset
+	var outer_br = Vector3(window_p2.x, y_bottom, -window_p2.y) + outer_offset
+	var outer_tr = Vector3(window_p2.x, y_top, -window_p2.y) + outer_offset
+	var outer_tl = Vector3(window_p1.x, y_top, -window_p1.y) + outer_offset
+
+	# Inner corners (recessed)
+	var inner_bl = Vector3(window_p1.x, y_bottom, -window_p1.y) + inner_offset
+	var inner_br = Vector3(window_p2.x, y_bottom, -window_p2.y) + inner_offset
+	var inner_tr = Vector3(window_p2.x, y_top, -window_p2.y) + inner_offset
+	var inner_tl = Vector3(window_p1.x, y_top, -window_p1.y) + inner_offset
+
+	# Calculate perpendicular direction for left/right normals
+	var wall_dir = (window_p2 - window_p1).normalized()
+	var left_normal = Vector3(-wall_dir.x, 0, wall_dir.y)
+	var right_normal = -left_normal
+
+	# === TOP REVEAL (horizontal surface at top of window) ===
+	var top_base = vertices.size()
+	vertices.append(outer_tl)
+	vertices.append(outer_tr)
+	vertices.append(inner_tr)
+	vertices.append(inner_tl)
+
+	var top_normal = Vector3(0, 1, 0)  # Facing up (but slightly angled down into recess)
+	for i in range(4):
+		normals.append(top_normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(window_width, 0))
+	uvs.append(Vector2(window_width, recess_depth))
+	uvs.append(Vector2(0, recess_depth))
+
+	indices.append(top_base + 0)
+	indices.append(top_base + 3)
+	indices.append(top_base + 2)
+	indices.append(top_base + 0)
+	indices.append(top_base + 2)
+	indices.append(top_base + 1)
+
+	# === BOTTOM REVEAL (horizontal surface at bottom of window) ===
+	var bottom_base = vertices.size()
+	vertices.append(outer_bl)
+	vertices.append(outer_br)
+	vertices.append(inner_br)
+	vertices.append(inner_bl)
+
+	var bottom_normal = Vector3(0, -1, 0)  # Facing down
+	for i in range(4):
+		normals.append(bottom_normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(window_width, 0))
+	uvs.append(Vector2(window_width, recess_depth))
+	uvs.append(Vector2(0, recess_depth))
+
+	indices.append(bottom_base + 0)
+	indices.append(bottom_base + 1)
+	indices.append(bottom_base + 2)
+	indices.append(bottom_base + 0)
+	indices.append(bottom_base + 2)
+	indices.append(bottom_base + 3)
+
+	# === LEFT REVEAL (vertical surface on left side) ===
+	var left_base = vertices.size()
+	vertices.append(outer_bl)
+	vertices.append(outer_tl)
+	vertices.append(inner_tl)
+	vertices.append(inner_bl)
+
+	for i in range(4):
+		normals.append(left_normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(0, window_height))
+	uvs.append(Vector2(recess_depth, window_height))
+	uvs.append(Vector2(recess_depth, 0))
+
+	indices.append(left_base + 0)
+	indices.append(left_base + 3)
+	indices.append(left_base + 2)
+	indices.append(left_base + 0)
+	indices.append(left_base + 2)
+	indices.append(left_base + 1)
+
+	# === RIGHT REVEAL (vertical surface on right side) ===
+	var right_base = vertices.size()
+	vertices.append(outer_br)
+	vertices.append(outer_tr)
+	vertices.append(inner_tr)
+	vertices.append(inner_br)
+
+	for i in range(4):
+		normals.append(right_normal)
+
+	uvs.append(Vector2(0, 0))
+	uvs.append(Vector2(0, window_height))
+	uvs.append(Vector2(recess_depth, window_height))
+	uvs.append(Vector2(recess_depth, 0))
+
+	indices.append(right_base + 0)
+	indices.append(right_base + 1)
+	indices.append(right_base + 2)
+	indices.append(right_base + 0)
+	indices.append(right_base + 2)
+	indices.append(right_base + 3)
+
+	# Total: 16 vertices (4 per reveal quad)
+	# Total: 8 triangles (2 per reveal quad)
+
 ## Add window glass quad (multi-surface version)
-static func _add_window_glass_multi(p1: Vector2, p2: Vector2, t1: float, t2: float, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, base_index: int):
+static func _add_window_glass_multi(p1: Vector2, p2: Vector2, t1: float, t2: float, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, base_index: int, recess_depth: float = 0.15):
 	var window_p1 = p1.lerp(p2, t1)
 	var window_p2 = p1.lerp(p2, t2)
 
-	# Offset slightly forward from wall (0.05m)
-	var offset = Vector3(normal.x * 0.05, 0, normal.z * 0.05)
+	# Recess window glass into wall (negative offset = inward)
+	var offset = Vector3(normal.x * -recess_depth, 0, normal.z * -recess_depth)
 
 	var v1 = Vector3(window_p1.x, y_bottom, -window_p1.y) + offset
 	var v2 = Vector3(window_p2.x, y_bottom, -window_p2.y) + offset
@@ -471,13 +813,13 @@ static func _add_window_glass(p1: Vector2, p2: Vector2, t1: float, t2: float, y_
 	_add_window_glass_multi(p1, p2, t1, t2, y_bottom, y_top, normal, vertices, normals, uvs, indices, base_index)
 
 ## Add window frame around window opening (multi-surface version)
-static func _add_window_frame_multi(p1: Vector2, p2: Vector2, t1: float, t2: float, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array):
+static func _add_window_frame_multi(p1: Vector2, p2: Vector2, t1: float, t2: float, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, recess_depth: float = 0.15):
 	var window_p1 = p1.lerp(p2, t1)
 	var window_p2 = p1.lerp(p2, t2)
 	var window_width = window_p1.distance_to(window_p2)
 
 	var frame_thickness = 0.08  # 8cm frame thickness
-	var frame_depth = 0.1  # 10cm depth into wall
+	var frame_depth = recess_depth  # Frame at window recess depth
 
 	# Get tangent vector along wall
 	var wall_tangent = (window_p2 - window_p1).normalized()
@@ -557,7 +899,8 @@ static func _generate_flat_roof(footprint: Array, center: Vector2, building_heig
 	if footprint.size() < 3:
 		return
 
-	var roof_y = building_height
+	# Place roof slightly above cornice to avoid z-fighting
+	var roof_y = building_height + 0.05  # 5cm above building top/cornice
 	var base_index = vertices.size()
 
 	# Convert footprint to local coordinates
@@ -566,7 +909,14 @@ static func _generate_flat_roof(footprint: Array, center: Vector2, building_heig
 		local_polygon.append(point - center)
 
 	# Use Godot's built-in triangulation (handles concave footprints correctly)
-	var roof_indices = PolygonTriangulator.triangulate(local_polygon)
+	var roof_indices_raw = PolygonTriangulator.triangulate(local_polygon)
+
+	# REVERSE indices for correct winding order (normals facing UP)
+	var roof_indices_reversed = PackedInt32Array()
+	for i in range(0, roof_indices_raw.size(), 3):
+		roof_indices_reversed.append(roof_indices_raw[i + 2])
+		roof_indices_reversed.append(roof_indices_raw[i + 1])
+		roof_indices_reversed.append(roof_indices_raw[i])
 
 	# Add roof vertices
 	for point in local_polygon:
@@ -575,7 +925,7 @@ static func _generate_flat_roof(footprint: Array, center: Vector2, building_heig
 		uvs.append(Vector2(point.x, point.y))
 
 	# Add triangulated indices (offset by base_index)
-	for idx in roof_indices:
+	for idx in roof_indices_reversed:
 		indices.append(base_index + idx)
 
 ## Generate gabled roof (peaked roof with two sloped sides)
@@ -666,10 +1016,10 @@ static func _generate_gabled_roof(footprint: Array, center: Vector2, building_he
 		uvs.append(Vector2(1, 0))
 		uvs.append(Vector2(0.5, 1))
 
-		# Triangle
+		# Triangle (reversed winding for correct normals)
 		indices.append(face_base + 0)
-		indices.append(face_base + 1)
 		indices.append(face_base + 2)
+		indices.append(face_base + 1)
 
 ## Generate hipped roof (all sides slope inward)
 static func _generate_hipped_roof(footprint: Array, center: Vector2, building_height: float, osm_data: Dictionary, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array):
@@ -756,15 +1106,15 @@ static func _generate_hipped_roof(footprint: Array, center: Vector2, building_he
 		uvs.append(Vector2(1, 1))
 		uvs.append(Vector2(0, 1))
 
-		# First triangle
+		# First triangle (reversed winding)
 		indices.append(face_base + 0)
+		indices.append(face_base + 2)
 		indices.append(face_base + 1)
-		indices.append(face_base + 2)
 
-		# Second triangle
+		# Second triangle (reversed winding)
 		indices.append(face_base + 0)
-		indices.append(face_base + 2)
 		indices.append(face_base + 3)
+		indices.append(face_base + 2)
 
 ## Generate pyramidal roof (all sides meet at center point)
 static func _generate_pyramidal_roof(footprint: Array, center: Vector2, building_height: float, osm_data: Dictionary, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array):
@@ -807,9 +1157,10 @@ static func _generate_pyramidal_roof(footprint: Array, center: Vector2, building
 		uvs.append(Vector2(0, 0))
 		uvs.append(Vector2(1, 0))
 
+		# Reversed winding for correct normals
 		indices.append(face_base + 0)
-		indices.append(face_base + 1)
 		indices.append(face_base + 2)
+		indices.append(face_base + 1)
 
 ## Get roof height from OSM data with intelligent fallbacks
 static func _get_roof_height(building_height: float, osm_data: Dictionary) -> float:
@@ -852,6 +1203,342 @@ static func _get_roof_height(building_height: float, osm_data: Dictionary) -> fl
 	# Fallback: 15% of building height (default)
 	return building_height * 0.15
 
+## Generate building foundation (darker base at ground level)
+static func _generate_building_foundation(footprint: Array, center: Vector2, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array):
+	if footprint.size() < 3:
+		return
+
+	var foundation_height = 1.0  # 1m tall darker base
+	var foundation_protrusion = 0.05  # 5cm slight protrusion
+
+	# Generate foundation band around building perimeter at ground level
+	for i in range(footprint.size()):
+		var p1 = footprint[i] - center
+		var p2 = footprint[(i + 1) % footprint.size()] - center
+
+		# Calculate wall normal (outward direction)
+		var wall_dir = (p2 - p1).normalized()
+		var wall_normal = Vector3(-wall_dir.y, 0, wall_dir.x)
+
+		# Offset for slight protrusion
+		var protrusion_offset = Vector3(wall_normal.x * foundation_protrusion, 0, wall_normal.z * foundation_protrusion)
+
+		# Base (at wall surface)
+		var base_bl = Vector3(p1.x, 0, -p1.y)
+		var base_br = Vector3(p2.x, 0, -p2.y)
+		var base_tl = Vector3(p1.x, foundation_height, -p1.y)
+		var base_tr = Vector3(p2.x, foundation_height, -p2.y)
+
+		# Protruding edge
+		var prot_bl = base_bl + protrusion_offset
+		var prot_br = base_br + protrusion_offset
+		var prot_tl = base_tl + protrusion_offset
+		var prot_tr = base_tr + protrusion_offset
+
+		var base_index = vertices.size()
+
+		# === OUTER FACE (protruding front - darker material) ===
+		vertices.append(prot_bl)
+		vertices.append(prot_br)
+		vertices.append(prot_tr)
+		vertices.append(prot_tl)
+
+		for j in range(4):
+			normals.append(wall_normal)
+
+		var segment_width = p1.distance_to(p2)
+		uvs.append(Vector2(0, 0))
+		uvs.append(Vector2(segment_width, 0))
+		uvs.append(Vector2(segment_width, foundation_height))
+		uvs.append(Vector2(0, foundation_height))
+
+		indices.append(base_index + 0)
+		indices.append(base_index + 1)
+		indices.append(base_index + 2)
+		indices.append(base_index + 0)
+		indices.append(base_index + 2)
+		indices.append(base_index + 3)
+
+		# === TOP FACE (top of foundation) ===
+		var top_base = vertices.size()
+		vertices.append(base_tl)
+		vertices.append(base_tr)
+		vertices.append(prot_tr)
+		vertices.append(prot_tl)
+
+		for j in range(4):
+			normals.append(Vector3.UP)
+
+		uvs.append(Vector2(0, 0))
+		uvs.append(Vector2(segment_width, 0))
+		uvs.append(Vector2(segment_width, foundation_protrusion))
+		uvs.append(Vector2(0, foundation_protrusion))
+
+		indices.append(top_base + 0)
+		indices.append(top_base + 1)
+		indices.append(top_base + 2)
+		indices.append(top_base + 0)
+		indices.append(top_base + 2)
+		indices.append(top_base + 3)
+
+## Generate cornice (decorative protruding band at top of building)
+static func _generate_cornice(footprint: Array, center: Vector2, building_height: float, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array):
+	if footprint.size() < 3:
+		return
+
+	var cornice_height = 0.5  # 50cm tall cornice
+	var cornice_protrusion = 0.35  # 35cm protrusion from wall
+	var cornice_bottom = building_height - cornice_height
+	var cornice_top = building_height
+
+	# Generate cornice around building perimeter
+	for i in range(footprint.size()):
+		var p1 = footprint[i] - center
+		var p2 = footprint[(i + 1) % footprint.size()] - center
+
+		# Calculate wall normal (outward direction)
+		var wall_dir = (p2 - p1).normalized()
+		var wall_normal = Vector3(-wall_dir.y, 0, wall_dir.x)
+
+		# Offset for protrusion
+		var protrusion_offset = Vector3(wall_normal.x * cornice_protrusion, 0, wall_normal.z * cornice_protrusion)
+
+		# Base (at wall surface)
+		var base_bl = Vector3(p1.x, cornice_bottom, -p1.y)
+		var base_br = Vector3(p2.x, cornice_bottom, -p2.y)
+		var base_tl = Vector3(p1.x, cornice_top, -p1.y)
+		var base_tr = Vector3(p2.x, cornice_top, -p2.y)
+
+		# Protruding edge
+		var prot_bl = base_bl + protrusion_offset
+		var prot_br = base_br + protrusion_offset
+		var prot_tl = base_tl + protrusion_offset
+		var prot_tr = base_tr + protrusion_offset
+
+		var base_index = vertices.size()
+
+		# === OUTER FACE (protruding front) ===
+		vertices.append(prot_bl)
+		vertices.append(prot_br)
+		vertices.append(prot_tr)
+		vertices.append(prot_tl)
+
+		for j in range(4):
+			normals.append(wall_normal)
+
+		var segment_width = p1.distance_to(p2)
+		uvs.append(Vector2(0, 0))
+		uvs.append(Vector2(segment_width, 0))
+		uvs.append(Vector2(segment_width, cornice_height))
+		uvs.append(Vector2(0, cornice_height))
+
+		indices.append(base_index + 0)
+		indices.append(base_index + 1)
+		indices.append(base_index + 2)
+		indices.append(base_index + 0)
+		indices.append(base_index + 2)
+		indices.append(base_index + 3)
+
+		# === BOTTOM FACE (underside of protrusion) ===
+		var bottom_base = vertices.size()
+		vertices.append(base_bl)
+		vertices.append(base_br)
+		vertices.append(prot_br)
+		vertices.append(prot_bl)
+
+		for j in range(4):
+			normals.append(Vector3.DOWN)
+
+		uvs.append(Vector2(0, 0))
+		uvs.append(Vector2(segment_width, 0))
+		uvs.append(Vector2(segment_width, cornice_protrusion))
+		uvs.append(Vector2(0, cornice_protrusion))
+
+		# Reversed winding for downward face
+		indices.append(bottom_base + 0)
+		indices.append(bottom_base + 3)
+		indices.append(bottom_base + 2)
+		indices.append(bottom_base + 0)
+		indices.append(bottom_base + 2)
+		indices.append(bottom_base + 1)
+
+		# === TOP FACE (top of cornice) ===
+		var top_base = vertices.size()
+		vertices.append(base_tl)
+		vertices.append(base_tr)
+		vertices.append(prot_tr)
+		vertices.append(prot_tl)
+
+		for j in range(4):
+			normals.append(Vector3.UP)
+
+		uvs.append(Vector2(0, 0))
+		uvs.append(Vector2(segment_width, 0))
+		uvs.append(Vector2(segment_width, cornice_protrusion))
+		uvs.append(Vector2(0, cornice_protrusion))
+
+		indices.append(top_base + 0)
+		indices.append(top_base + 1)
+		indices.append(top_base + 2)
+		indices.append(top_base + 0)
+		indices.append(top_base + 2)
+		indices.append(top_base + 3)
+
+## Generate floor slabs (horizontal concrete floors at each level)
+static func _generate_floor_slabs(footprint: Array, center: Vector2, height: float, levels: int, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array):
+	if footprint.size() < 3 or levels < 2:
+		return
+
+	var floor_height = height / float(levels)
+	var slab_thickness = 0.25  # 25cm thick concrete slab
+
+	# Generate floor slabs at each level (skip ground floor, include all upper floors)
+	for floor_num in range(1, levels):  # Start from floor 1 (first floor above ground)
+		var slab_bottom_y = floor_num * floor_height
+		var slab_top_y = slab_bottom_y + slab_thickness
+
+		# Convert footprint to local coordinates
+		var local_polygon = []
+		for point in footprint:
+			local_polygon.append(point - center)
+
+		# Triangulate the floor footprint
+		var floor_indices_raw = PolygonTriangulator.triangulate(local_polygon)
+
+		# REVERSE indices for correct winding order (top face visible from above)
+		var floor_indices_reversed = PackedInt32Array()
+		for i in range(0, floor_indices_raw.size(), 3):
+			floor_indices_reversed.append(floor_indices_raw[i + 2])
+			floor_indices_reversed.append(floor_indices_raw[i + 1])
+			floor_indices_reversed.append(floor_indices_raw[i])
+
+		# === TOP FACE (visible from above) ===
+		var top_base_index = vertices.size()
+		for point in local_polygon:
+			vertices.append(Vector3(point.x, slab_top_y, -point.y))
+			normals.append(Vector3.UP)
+			uvs.append(Vector2(point.x, point.y))
+
+		for idx in floor_indices_reversed:
+			indices.append(top_base_index + idx)
+
+		# === BOTTOM FACE (visible from below) ===
+		var bottom_base_index = vertices.size()
+		for point in local_polygon:
+			vertices.append(Vector3(point.x, slab_bottom_y, -point.y))
+			normals.append(Vector3.DOWN)
+			uvs.append(Vector2(point.x, point.y))
+
+		# Use non-reversed indices for bottom (facing down)
+		for idx in floor_indices_raw:
+			indices.append(bottom_base_index + idx)
+
+## Generate floor ledges (horizontal bands between floors)
+static func _generate_floor_ledges(footprint: Array, center: Vector2, height: float, levels: int, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array):
+	if footprint.size() < 3 or levels < 2:
+		return
+
+	var floor_height = height / float(levels)
+	var ledge_height = 0.25  # 25cm tall ledge (more visible)
+	var ledge_protrusion = 0.20  # 20cm protrusion from wall (more prominent)
+
+	# Generate ledges at each floor division (not at top or bottom)
+	for floor_num in range(1, levels):  # Skip floor 0 (ground) and top floor (has cornice)
+		var ledge_y = floor_num * floor_height
+
+		# Generate ledge around building perimeter
+		for i in range(footprint.size()):
+			var p1 = footprint[i] - center
+			var p2 = footprint[(i + 1) % footprint.size()] - center
+
+			# Calculate wall normal (outward direction)
+			var wall_dir = (p2 - p1).normalized()
+			var wall_normal = Vector3(-wall_dir.y, 0, wall_dir.x)
+
+			# Offset for protrusion
+			var protrusion_offset = Vector3(wall_normal.x * ledge_protrusion, 0, wall_normal.z * ledge_protrusion)
+
+			# Base (at wall surface)
+			var base_b = Vector3(p1.x, ledge_y, -p1.y)
+			var base_br = Vector3(p2.x, ledge_y, -p2.y)
+			var base_t = Vector3(p1.x, ledge_y + ledge_height, -p1.y)
+			var base_tr = Vector3(p2.x, ledge_y + ledge_height, -p2.y)
+
+			# Protruding edge
+			var prot_b = base_b + protrusion_offset
+			var prot_br = base_br + protrusion_offset
+			var prot_t = base_t + protrusion_offset
+			var prot_tr = base_tr + protrusion_offset
+
+			var base_index = vertices.size()
+
+			# === OUTER FACE (protruding front) ===
+			vertices.append(prot_b)
+			vertices.append(prot_br)
+			vertices.append(prot_tr)
+			vertices.append(prot_t)
+
+			for j in range(4):
+				normals.append(wall_normal)
+
+			var segment_width = p1.distance_to(p2)
+			uvs.append(Vector2(0, 0))
+			uvs.append(Vector2(segment_width, 0))
+			uvs.append(Vector2(segment_width, ledge_height))
+			uvs.append(Vector2(0, ledge_height))
+
+			indices.append(base_index + 0)
+			indices.append(base_index + 1)
+			indices.append(base_index + 2)
+			indices.append(base_index + 0)
+			indices.append(base_index + 2)
+			indices.append(base_index + 3)
+
+			# === BOTTOM FACE (underside of ledge) ===
+			var bottom_base = vertices.size()
+			vertices.append(base_b)
+			vertices.append(base_br)
+			vertices.append(prot_br)
+			vertices.append(prot_b)
+
+			for j in range(4):
+				normals.append(Vector3.DOWN)
+
+			uvs.append(Vector2(0, 0))
+			uvs.append(Vector2(segment_width, 0))
+			uvs.append(Vector2(segment_width, ledge_protrusion))
+			uvs.append(Vector2(0, ledge_protrusion))
+
+			# Reversed winding for downward face
+			indices.append(bottom_base + 0)
+			indices.append(bottom_base + 3)
+			indices.append(bottom_base + 2)
+			indices.append(bottom_base + 0)
+			indices.append(bottom_base + 2)
+			indices.append(bottom_base + 1)
+
+			# === TOP FACE (top of ledge) ===
+			var top_base = vertices.size()
+			vertices.append(base_t)
+			vertices.append(base_tr)
+			vertices.append(prot_tr)
+			vertices.append(prot_t)
+
+			for j in range(4):
+				normals.append(Vector3.UP)
+
+			uvs.append(Vector2(0, 0))
+			uvs.append(Vector2(segment_width, 0))
+			uvs.append(Vector2(segment_width, ledge_protrusion))
+			uvs.append(Vector2(0, ledge_protrusion))
+
+			indices.append(top_base + 0)
+			indices.append(top_base + 1)
+			indices.append(top_base + 2)
+			indices.append(top_base + 0)
+			indices.append(top_base + 2)
+			indices.append(top_base + 3)
+
 ## Get window parameters based on building type
 static func _get_window_parameters(building_type: String) -> Dictionary:
 	match building_type:
@@ -864,48 +1551,87 @@ static func _get_window_parameters(building_type: String) -> Dictionary:
 		_:
 			return {"spacing": 3.0, "width": 1.5, "height": 2.0}
 
-## Create building material from OSM data
+## Create building material with PBR shading
 static func _create_building_material(osm_data: Dictionary) -> StandardMaterial3D:
 	var material = StandardMaterial3D.new()
 
-	# Priority 1: Use OSM building:colour if available
-	var osm_color = osm_data.get("building:colour", "")
-	if osm_color != "":
-		var color = _parse_osm_color(osm_color)
-		if color != Color.TRANSPARENT:
-			material.albedo_color = color
-			material.roughness = 0.7
-			return material
+	# Try to get building color from OSM data
+	var building_color_str = osm_data.get("building:colour", "")
+	var building_material_str = osm_data.get("building:material", "")
+	var building_type = osm_data.get("building_type", "")
+	var building_id = int(osm_data.get("id", 0))
+	var wall_color = Color.TRANSPARENT
 
-	# Priority 2: Use material type
-	var material_type = osm_data.get("building:material", osm_data.get("building:cladding", "")).to_lower()
-	if MATERIALS.has(material_type):
-		var mat_def = MATERIALS[material_type]
-		material.albedo_color = mat_def["color"]
-		material.roughness = mat_def.get("roughness", 0.7)
-		if mat_def.has("metallic"):
-			material.metallic = mat_def["metallic"]
-		if mat_def.has("color") and mat_def["color"].a < 1.0:
-			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		return material
+	# Priority 1: Explicit OSM building color
+	if building_color_str != "":
+		wall_color = _parse_osm_color(building_color_str)
 
-	# Priority 3: Use building type defaults
-	var building_type = osm_data.get("building_type", "yes")
-	match building_type:
-		"commercial", "office", "retail":
-			material.albedo_color = Color(0.85, 0.85, 0.9)
-		"residential", "apartments", "house":
-			material.albedo_color = Color(0.9, 0.85, 0.75)
-		"industrial", "warehouse":
-			material.albedo_color = Color(0.6, 0.6, 0.65)
-		"civic", "public", "government":
-			material.albedo_color = Color(0.8, 0.75, 0.7)
-		"historic", "heritage":
-			material.albedo_color = Color(0.7, 0.4, 0.3)
-		_:
-			material.albedo_color = Color(0.8, 0.8, 0.8)
+	# Priority 2: Building material type
+	if wall_color == Color.TRANSPARENT and building_material_str != "":
+		match building_material_str.to_lower():
+			"brick":
+				wall_color = Color.html("#B85C4D")  # Red brick
+			"concrete":
+				wall_color = Color.html("#C0C0C0")  # Gray concrete
+			"wood":
+				wall_color = Color.html("#D2B48C")  # Light wood/tan
+			"stone":
+				wall_color = Color.html("#A8A8A8")  # Gray stone
+			"plaster", "stucco":
+				wall_color = Color.html("#F5E6D3")  # Off-white/cream
+			"glass":
+				wall_color = Color.html("#E0F2F7")  # Light blue-tinted
 
-	material.roughness = 0.7
+	# Priority 3: Realistic variety based on building type
+	if wall_color == Color.TRANSPARENT:
+		match building_type:
+			"house", "residential":
+				# Residential: warm, varied colors
+				var colors = [
+					Color.html("#F5DEB3"),  # Wheat/tan
+					Color.html("#E8D4C0"),  # Beige
+					Color.html("#D2B48C"),  # Light tan
+					Color.html("#C9B8A0"),  # Warm gray
+					Color.html("#B85C4D"),  # Red brick
+					Color.html("#8B7355"),  # Brown
+					Color.html("#FFFACD"),  # Light yellow
+					Color.html("#E6E6E6"),  # Light gray
+				]
+				wall_color = colors[building_id % colors.size()]
+			"commercial", "office", "retail":
+				# Commercial: grays, whites, modern
+				var colors = [
+					Color.html("#E0E0E0"),  # Light gray
+					Color.html("#F5F5F5"),  # Off-white
+					Color.html("#C0C0C0"),  # Gray
+					Color.html("#B0B0B0"),  # Medium gray
+					Color.html("#D3D3D3"),  # Light steel
+				]
+				wall_color = colors[building_id % colors.size()]
+			"industrial", "warehouse":
+				# Industrial: utilitarian colors
+				var colors = [
+					Color.html("#A0A0A0"),  # Gray
+					Color.html("#8B7355"),  # Brown
+					Color.html("#B0B0B0"),  # Light gray metal
+					Color.html("#696969"),  # Dim gray
+				]
+				wall_color = colors[building_id % colors.size()]
+			_:
+				# Default: neutral palette
+				var colors = [
+					Color.html("#F5F5DC"),  # Beige
+					Color.html("#E8E8E8"),  # Light gray
+					Color.html("#D2B48C"),  # Tan
+					Color.html("#C0C0C0"),  # Gray
+				]
+				wall_color = colors[building_id % colors.size()]
+
+	material.albedo_color = wall_color
+
+	# PBR properties for realistic lighting
+	material.roughness = 0.8  # Slightly rough surface for buildings
+	material.metallic = 0.0   # Non-metallic
 	return material
 
 ## Parse OSM color (hex or named)
@@ -935,93 +1661,104 @@ static func _parse_osm_color(color_string: String) -> Color:
 		"orange": return Color.ORANGE
 		_: return Color.TRANSPARENT
 
-## Create roof material from OSM data (separate from walls)
+## Create roof material with PBR shading
 static func _create_roof_material(osm_data: Dictionary) -> StandardMaterial3D:
 	var material = StandardMaterial3D.new()
 
-	# Priority 1: Use OSM roof:colour if available
-	var roof_color = osm_data.get("roof:colour", "")
-	if roof_color != "":
-		var color = _parse_osm_color(roof_color)
-		if color != Color.TRANSPARENT:
-			material.albedo_color = color
-			material.roughness = 0.7
-			return material
+	# Try to get roof color from OSM data
+	var roof_color_str = osm_data.get("roof:colour", "")
+	var roof_material_str = osm_data.get("roof:material", "")
+	var building_type = osm_data.get("building_type", "")
+	var building_id = int(osm_data.get("id", 0))
+	var roof_color = Color.TRANSPARENT
 
-	# Priority 2: Use roof:material type with presets
-	var roof_material_type = osm_data.get("roof:material", "").to_lower()
-	match roof_material_type:
-		"tiles", "tile":
-			material.albedo_color = Color(0.6, 0.3, 0.2)  # Terracotta/clay tiles
-			material.roughness = 0.7
-			return material
-		"metal", "steel":
-			material.albedo_color = Color(0.4, 0.4, 0.45)
-			material.metallic = 0.8
-			material.roughness = 0.3
-			return material
-		"slate":
-			material.albedo_color = Color(0.25, 0.25, 0.3)  # Dark gray slate
-			material.roughness = 0.6
-			return material
-		"concrete":
-			material.albedo_color = Color(0.5, 0.5, 0.5)
-			material.roughness = 0.8
-			return material
-		"shingles", "asphalt":
-			material.albedo_color = Color(0.3, 0.3, 0.35)  # Dark asphalt shingles
-			material.roughness = 0.9
-			return material
-		"glass":
-			material.albedo_color = Color(0.7, 0.8, 0.9, 0.5)
-			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			material.roughness = 0.1
-			material.metallic = 0.2
-			return material
-		"copper":
-			material.albedo_color = Color(0.3, 0.6, 0.4)  # Green patina copper
-			material.metallic = 0.7
-			material.roughness = 0.4
-			return material
-		"tar_paper", "gravel":
-			material.albedo_color = Color(0.2, 0.2, 0.2)  # Dark flat roof
-			material.roughness = 1.0
-			return material
+	# Priority 1: Explicit OSM roof color
+	if roof_color_str != "":
+		roof_color = _parse_osm_color(roof_color_str)
 
-	# Priority 3: Fallback based on roof shape
-	var roof_shape = osm_data.get("roof:shape", "flat")
-	match roof_shape:
-		"flat":
-			# Flat roofs are often tar/gravel
-			material.albedo_color = Color(0.25, 0.25, 0.25)
-			material.roughness = 0.9
-		"gabled", "hipped", "pyramidal":
-			# Sloped roofs typically have shingles or tiles
-			material.albedo_color = Color(0.4, 0.25, 0.2)  # Red-brown tiles
-			material.roughness = 0.7
-		_:
-			# Default gray roof
-			material.albedo_color = Color(0.4, 0.4, 0.4)
-			material.roughness = 0.7
+	# Priority 2: Roof material type
+	if roof_color == Color.TRANSPARENT and roof_material_str != "":
+		match roof_material_str.to_lower():
+			"tile", "tiles", "clay":
+				roof_color = Color.html("#A0522D")  # Terracotta red-brown
+			"slate":
+				roof_color = Color.html("#708090")  # Slate gray
+			"metal", "steel":
+				roof_color = Color.html("#B0B0B0")  # Light gray metal
+			"concrete":
+				roof_color = Color.html("#9E9E9E")  # Concrete gray
+			"wood", "shingles":
+				roof_color = Color.html("#654321")  # Dark brown
+			"tar", "asphalt":
+				roof_color = Color.html("#2F2F2F")  # Very dark gray
+			"gravel":
+				roof_color = Color.html("#A9A9A9")  # Gray
+
+	# Priority 3: Realistic roof colors (based on Google Maps observation - mostly white/grey)
+	if roof_color == Color.TRANSPARENT:
+		# Most modern roofs are white, light grey, or dark grey (reflective/TPO/tar)
+		var realistic_roof_colors = [
+			Color.html("#FFFFFF"),  # White (TPO/reflective)
+			Color.html("#F5F5F5"),  # Off-white
+			Color.html("#E8E8E8"),  # Very light grey
+			Color.html("#D3D3D3"),  # Light grey
+			Color.html("#C0C0C0"),  # Medium light grey
+			Color.html("#A9A9A9"),  # Medium grey
+			Color.html("#808080"),  # Grey
+			Color.html("#696969"),  # Dark grey
+			Color.html("#505050"),  # Darker grey
+			Color.html("#3C3C3C"),  # Very dark grey (tar)
+		]
+		roof_color = realistic_roof_colors[building_id % realistic_roof_colors.size()]
+
+	material.albedo_color = roof_color
+
+	# PBR properties for realistic lighting
+	material.roughness = 0.9  # Very rough for roofing materials
+	material.metallic = 0.0   # Non-metallic
 
 	return material
 
-## Create window glass material (transparent blue)
+## Create window glass material with transparency and reflections
 static func _create_window_material() -> StandardMaterial3D:
 	var material = StandardMaterial3D.new()
-	material.albedo_color = Color(0.6, 0.7, 0.9, 0.4)  # Light blue glass with transparency
+
+	# Glass-like properties with transparency
+	material.albedo_color = Color.html("#64B5F6")  # Bright blue (80% opacity)
+	material.albedo_color.a = 0.8
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.metallic = 0.1
-	material.roughness = 0.1
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED  # Visible from both sides
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+
+	# PBR properties for glass-like appearance
+	material.roughness = 0.1  # Very smooth for glass
+	material.metallic = 0.2   # Slight metallic for reflections
+
 	return material
 
-## Create window frame material (dark, contrasting)
+## Create floor slab material (concrete)
+static func _create_floor_material() -> StandardMaterial3D:
+	var material = StandardMaterial3D.new()
+
+	# Concrete grey color
+	material.albedo_color = Color.html("#A0A0A0")  # Medium grey concrete
+
+	# PBR properties for concrete
+	material.roughness = 0.7  # Somewhat rough
+	material.metallic = 0.0   # Non-metallic
+
+	return material
+
+## Create window frame material with PBR shading
 static func _create_frame_material() -> StandardMaterial3D:
 	var material = StandardMaterial3D.new()
-	material.albedo_color = Color(0.2, 0.2, 0.2)  # Dark gray/black frames
-	material.roughness = 0.6
-	material.metallic = 0.1
+
+	# Dark frames for contrast
+	material.albedo_color = Color.html("#424242")  # Dark gray
+
+	# PBR properties for frame material
+	material.roughness = 0.7  # Moderate roughness
+	material.metallic = 0.1   # Slight metallic
+
 	return material
 
 ## Add name label to building

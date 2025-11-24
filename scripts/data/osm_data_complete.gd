@@ -150,7 +150,7 @@ func _parse_complete_building(element: Dictionary, nodes: Dictionary) -> Diction
 		"building:architecture": tags.get("building:architecture", ""),
 
 		# === ROOF DATA ===
-		"roof:shape": tags.get("roof:shape", "flat"),
+		"roof:shape": tags.get("roof:shape", ""),  # Empty string = infer from building type
 		"roof:colour": tags.get("roof:colour", tags.get("roof:color", "")),
 		"roof:material": tags.get("roof:material", ""),
 		"roof:height": float(tags.get("roof:height", 0)),

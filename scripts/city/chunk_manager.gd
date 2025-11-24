@@ -56,7 +56,7 @@ var update_timer: float = 0.0
 
 # References to dependencies (injected)
 var feature_factory = null  # FeatureFactory instance
-var scene_root: Node3D = null  # Parent node for chunks
+var scene_root: Node = null  # Parent node for chunks (CityRenderer or SubViewport)
 var loading_queue = null  # LoadingQueue instance
 
 # Camera position tracking (for priority calculation)
@@ -66,7 +66,11 @@ var last_camera_pos: Vector2 = Vector2.ZERO
 # INITIALIZATION
 # ========================================================================
 
-func _init(p_feature_factory, p_scene_root: Node3D):
+func _init(p_feature_factory, p_scene_root: Node):
+	"""
+	Initialize ChunkManager with dependencies.
+	p_scene_root can be CityRenderer (Node3D) or SubViewport (Viewport).
+	"""
 	feature_factory = p_feature_factory
 	scene_root = p_scene_root
 

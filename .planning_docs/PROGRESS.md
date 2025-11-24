@@ -1,8 +1,8 @@
 # Progress Tracker
 
-**Last Updated:** 2025-01-23
-**Current Session:** #001
-**Current Phase:** Phase 0 - Foundation & Documentation
+**Last Updated:** 2025-11-23
+**Current Session:** #002
+**Current Phase:** Phase 3 - Realistic Geometry for First-Person
 
 ---
 
@@ -35,29 +35,46 @@
 - [x] Document performance improvements
 - [x] Add performance mode for rendering optimizations
 
-### Phase 2: Native Low-Res Hybrid Aesthetic
-**Status:** ⏸️ NOT STARTED
+### Phase 2: Retro Aesthetic (ABANDONED)
+**Status:** ❌ ABANDONED - Wrong direction for first-person gameplay
 
-- [ ] Refactor city_renderer.gd: SubViewport architecture
-- [ ] Move Camera3D, lights, environment into SubViewport
-- [ ] Create upscaling display (CanvasLayer + TextureRect)
-- [ ] Update camera_controller.gd references
-- [ ] Update chunk_manager.gd scene_root reference
-- [ ] Fix debug_ui.gd to render at native resolution
-- [ ] Create shaders/retro_palette.gdshader
-- [ ] Implement Bayer matrix dithering
-- [ ] Combine palette + dithering shaders
-- [ ] Add debug UI controls (resolution/palette presets)
-- [ ] Test & tune visual quality
-- [ ] Performance validation (60fps maintained)
+**What happened:**
+- Attempted PSX/Saturn retro aesthetic (flat/low-poly)
+- Implemented SubViewport + palette quantization + dithering
+- Result: Everything looked like "origami" - paper-thin, no volume
+- **Critical insight:** Game is first-person world simulator, NOT distant city view
+- Need realistic geometry with wall thickness and 3D detail
+
+**Lessons learned:**
+- Flat/unshaded materials remove all depth perception
+- Simple procedural geometry (boxes, planes) is too thin for close viewing
+- First-person requires: wall thickness, recessed windows, architectural detail
+- Current generators optimized for 200m viewing, need 2m viewing
+
+### Phase 3: Realistic Geometry for First-Person
+**Status:** 🚧 IN PROGRESS - Major pivot to realistic detail
+
+**Goal:** Build proper first-person world simulator with volume and detail
+
+**Sub-phases:**
+- [ ] **Phase 3A:** Restore proper lighting/shading (remove unshaded) - 1 hour
+- [ ] **Phase 3B:** Building wall thickness - 8-12 hours
+- [ ] **Phase 3C:** Window depth and frames - 4-6 hours
+- [ ] **Phase 3D:** Architectural details (ledges, cornices) - 3-4 hours
+- [ ] **Phase 3E:** Road improvements (curbs, sidewalks) - 2-3 hours
+- [ ] **Phase 3F:** Performance optimization (LOD, culling) - 2-3 hours
+
+**See:** `.planning_docs/plan/NEW_DIRECTION_realistic_geometry.md` for full plan
 
 ---
 
 ## 🎯 Current Task
 
-**Just completed:** Phase 1 - Performance Fix ✅
+**Just completed:** Phase 2 exploration (abandoned - wrong direction) ❌
 
-**Next up:** Begin Phase 2 - Hybrid Retro Aesthetic (SubViewport + palette + dithering)
+**Current:** Phase 3A - Restore proper lighting/shading
+
+**Next up:** Phase 3B - Implement wall thickness system
 
 ---
 
@@ -92,11 +109,12 @@ None currently.
 
 ## 🎯 Next Steps
 
-1. **Begin Phase 2** - Hybrid Retro Aesthetic
-2. Implement SubViewport architecture (native low-res rendering)
-3. Create palette quantization shader
-4. Implement Bayer matrix dithering
-5. Add debug UI controls for settings
+1. **Phase 3A (This session):** Remove UNSHADED materials, restore proper lighting
+2. **Phase 3B (Next 2-3 sessions):** Implement wall thickness system
+3. **Phase 3C (Following sessions):** Add window depth and frames
+4. **Phase 3D-F:** Architectural details, roads, performance optimization
+
+**Priority:** Wall thickness is most critical for first-person feel
 
 ---
 

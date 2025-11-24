@@ -43,7 +43,11 @@ var mouse_captured: bool = false
 # INITIALIZATION
 # ========================================================================
 
-func setup_camera(parent: Node3D, start_position: Vector3) -> Camera3D:
+func setup_camera(parent: Node, start_position: Vector3) -> Camera3D:
+	"""
+	Creates and configures the camera.
+	Parent can be CityRenderer (Node3D) or SubViewport (Viewport).
+	"""
 	camera = Camera3D.new()
 	parent.add_child(camera)
 

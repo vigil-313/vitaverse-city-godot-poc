@@ -23,7 +23,7 @@ func _init():
 # ========================================================================
 
 ## Create all buildings for a chunk
-func create_buildings_for_chunk(buildings_data: Array, parent: Node3D, tracking_array: Array):
+func create_buildings_for_chunk(buildings_data: Array, parent: Node, tracking_array: Array):
 	for building_data in buildings_data:
 		var center = building_data.get("center", Vector2.ZERO)
 		var building = BuildingGeneratorMesh.create_building(building_data, parent, true)
@@ -38,7 +38,7 @@ func create_buildings_for_chunk(buildings_data: Array, parent: Node3D, tracking_
 			})
 
 ## Create all roads for a chunk
-func create_roads_for_chunk(roads_data: Array, parent: Node3D, tracking_array: Array):
+func create_roads_for_chunk(roads_data: Array, parent: Node, tracking_array: Array):
 	for road_data in roads_data:
 		var path = road_data.get("path", [])
 		if path.size() < 2:
@@ -47,14 +47,14 @@ func create_roads_for_chunk(roads_data: Array, parent: Node3D, tracking_array: A
 		RoadGenerator.create_road(path, road_data, parent, tracking_array)
 
 ## Create all parks for a chunk
-func create_parks_for_chunk(parks_data: Array, parent: Node3D):
+func create_parks_for_chunk(parks_data: Array, parent: Node):
 	for park_data in parks_data:
 		var footprint = park_data.get("footprint", [])
 		if footprint.size() >= 3:
 			ParkGenerator.create_park(footprint, park_data, parent)
 
 ## Create all water features for a chunk
-func create_water_for_chunk(water_data_array: Array, parent: Node3D):
+func create_water_for_chunk(water_data_array: Array, parent: Node):
 	for water_data in water_data_array:
 		var footprint = water_data.get("footprint", [])
 		if footprint.size() >= 3:
@@ -65,7 +65,7 @@ func create_water_for_chunk(water_data_array: Array, parent: Node3D):
 # ========================================================================
 
 ## Create work items for all buildings in a chunk
-func create_building_work_items(buildings_data: Array, chunk_key: Vector2i, chunk_node: Node3D, tracking_array: Array, camera_pos: Vector2) -> Array:
+func create_building_work_items(buildings_data: Array, chunk_key: Vector2i, chunk_node: Node, tracking_array: Array, camera_pos: Vector2) -> Array:
 	var work_items = []
 
 	for building_data in buildings_data:
@@ -87,7 +87,7 @@ func create_building_work_items(buildings_data: Array, chunk_key: Vector2i, chun
 	return work_items
 
 ## Create work items for all roads in a chunk
-func create_road_work_items(roads_data: Array, chunk_key: Vector2i, chunk_node: Node3D, tracking_array: Array, camera_pos: Vector2) -> Array:
+func create_road_work_items(roads_data: Array, chunk_key: Vector2i, chunk_node: Node, tracking_array: Array, camera_pos: Vector2) -> Array:
 	var work_items = []
 
 	for road_data in roads_data:
@@ -118,7 +118,7 @@ func create_road_work_items(roads_data: Array, chunk_key: Vector2i, chunk_node: 
 	return work_items
 
 ## Create work items for all parks in a chunk
-func create_park_work_items(parks_data: Array, chunk_key: Vector2i, chunk_node: Node3D, camera_pos: Vector2) -> Array:
+func create_park_work_items(parks_data: Array, chunk_key: Vector2i, chunk_node: Node, camera_pos: Vector2) -> Array:
 	var work_items = []
 
 	for park_data in parks_data:
@@ -143,7 +143,7 @@ func create_park_work_items(parks_data: Array, chunk_key: Vector2i, chunk_node: 
 	return work_items
 
 ## Create work items for all water features in a chunk
-func create_water_work_items(water_data_array: Array, chunk_key: Vector2i, chunk_node: Node3D, camera_pos: Vector2) -> Array:
+func create_water_work_items(water_data_array: Array, chunk_key: Vector2i, chunk_node: Node, camera_pos: Vector2) -> Array:
 	var work_items = []
 
 	for water_data in water_data_array:
@@ -168,7 +168,7 @@ func create_water_work_items(water_data_array: Array, chunk_key: Vector2i, chunk
 	return work_items
 
 ## Create work items for all features in a chunk (convenience method)
-func create_work_items_for_chunk(chunk_key: Vector2i, chunk_node: Node3D, buildings_data: Array, roads_data: Array, parks_data: Array, water_data: Array, tracking_buildings: Array, tracking_roads: Array, camera_pos: Vector2) -> Array:
+func create_work_items_for_chunk(chunk_key: Vector2i, chunk_node: Node, buildings_data: Array, roads_data: Array, parks_data: Array, water_data: Array, tracking_buildings: Array, tracking_roads: Array, camera_pos: Vector2) -> Array:
 	var all_items = []
 
 	all_items.append_array(create_building_work_items(buildings_data, chunk_key, chunk_node, tracking_buildings, camera_pos))

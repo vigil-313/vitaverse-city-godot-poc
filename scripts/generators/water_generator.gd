@@ -17,7 +17,7 @@ const LABEL_FONT_SIZE = 96  # Water label font size
 # ========================================================================
 
 ## Create a water mesh from footprint data
-static func create_water(footprint: Array, water_data: Dictionary, parent: Node3D) -> MeshInstance3D:
+static func create_water(footprint: Array, water_data: Dictionary, parent: Node) -> MeshInstance3D:
 	# Handle linear waterways (streams, rivers, etc.) as paths, not polygons
 	var water_type = water_data.get("water_type", "")
 	var water_name = water_data.get("name", "unnamed")
@@ -93,29 +93,20 @@ static func create_water(footprint: Array, water_data: Dictionary, parent: Node3
 	var mesh_instance = MeshInstance3D.new()
 	mesh_instance.mesh = array_mesh
 
-	# Different settings for large vs small water bodies
+	# Position based on water body size
 	if is_large_water:
-		# Large lakes: ground level, semi-transparent blue with reflections
 		mesh_instance.position = Vector3(center.x, 0.0, -center.y)
-
-		var material = StandardMaterial3D.new()
-		material.albedo_color = Color(0.1, 0.25, 0.55, 0.85)  # Semi-transparent blue
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		material.roughness = 0.1  # Smooth for reflections
-		material.metallic = 0.6  # Reflective surface
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
-		mesh_instance.material_override = material
 	else:
-		# Small water features: elevated, semi-transparent blue with reflections
 		mesh_instance.position = Vector3(center.x, 0.1, -center.y)
 
-		var material = StandardMaterial3D.new()
-		material.albedo_color = Color(0.15, 0.3, 0.65, 0.85)  # Semi-transparent blue
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		material.roughness = 0.15  # Slightly rough
-		material.metallic = 0.5  # Reflective surface
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
-		mesh_instance.material_override = material
+	# Water material with PBR shading and transparency
+	var material = StandardMaterial3D.new()
+	material.albedo_color = Color.html("#42A5F5")  # Vibrant clean blue
+	material.albedo_color.a = 0.85
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.roughness = 0.1  # Very smooth for water surface
+	material.metallic = 0.3   # Some metallic for reflections
+	mesh_instance.material_override = material
 
 	parent.add_child(mesh_instance)
 
@@ -135,7 +126,7 @@ static func create_water(footprint: Array, water_data: Dictionary, parent: Node3
 # ========================================================================
 
 ## Create linear waterway (stream/river) as an extruded path
-static func _create_waterway_path(path: Array, water_data: Dictionary, parent: Node3D) -> MeshInstance3D:
+static func _create_waterway_path(path: Array, water_data: Dictionary, parent: Node) -> MeshInstance3D:
 	if path.size() < 2:
 		return null
 
@@ -212,13 +203,13 @@ static func _create_waterway_path(path: Array, water_data: Dictionary, parent: N
 	mesh_instance.mesh = array_mesh
 	mesh_instance.position = Vector3(center.x, 0, -center.y)
 
-	# Lighter blue for flowing water with reflections
+	# Waterway material with PBR shading and transparency
 	var material = StandardMaterial3D.new()
-	material.albedo_color = Color(0.25, 0.45, 0.75, 0.85)
+	material.albedo_color = Color.html("#42A5F5")  # Same as lakes
+	material.albedo_color.a = 0.85
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.roughness = 0.2  # Slightly rougher for flowing water
-	material.metallic = 0.4  # More reflective
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	material.roughness = 0.1  # Very smooth for water surface
+	material.metallic = 0.3   # Some metallic for reflections
 	mesh_instance.material_override = material
 
 	parent.add_child(mesh_instance)

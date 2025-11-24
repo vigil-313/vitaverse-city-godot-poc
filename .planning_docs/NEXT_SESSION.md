@@ -1,254 +1,163 @@
 # Next Session Quick Start
 
-**Date Created:** 2025-01-23
-**For:** Phase 2 - Hybrid Retro Aesthetic
+**Last Updated:** 2025-11-23 (Session #002)
+**Current Phase:** Phase 3 - Realistic Geometry for First-Person
 
 ---
 
-## 🎯 Where We Left Off
+## 🚨 IMPORTANT: Major Direction Change!
 
-### ✅ Completed
-- **Phase 0:** Foundation & Documentation
-- **Phase 1:** Performance Fix (LoadingQueue)
-  - Stuttering completely eliminated
-  - Smooth chunk loading at 5ms/frame
-  - Performance mode added
+**We pivoted!** Phase 2 (retro flat/low-poly) was ABANDONED.
 
-### ⏭️ Next Up
-**Phase 2:** Hybrid Retro Aesthetic
-- Native low-res rendering (SubViewport 480×360)
-- Palette quantization (64 colors)
-- Bayer matrix dithering
-- Runtime-configurable settings
+**Why?** Game is a **first-person world simulator** where players walk around.
+- Current graphics look like "origami" - paper-thin with no volume
+- Flat/unshaded materials remove all depth
+- Simple box geometry has no wall thickness
+- Everything optimized for viewing from 200m away, NOT 2m away
+
+**New Goal:** Realistic geometry with actual 3D volume and detail.
 
 ---
 
-## 📚 Required Reading
+## 📋 Session #003 Priorities
 
-Before starting Phase 2, read these in order:
+### Immediate Task: Phase 3A (1 hour)
+**Restore Proper Lighting & Shading**
 
-1. **`.planning_docs/README.md`** - Bootstrap procedure
-2. **`.planning_docs/PROGRESS.md`** - Current status
-3. **`.planning_docs/plan/phase-2-visuals.md`** - Detailed Phase 2 plan
-4. **`.planning_docs/visuals/native-lowres-architecture.md`** - SubViewport design
-5. **`.planning_docs/visuals/shader-design.md`** - Shader implementation
-6. **`.planning_docs/DECISIONS.md`** - Why we made these choices
+Current problem: All materials are UNSHADED (flat colors, no lighting)
+- Buildings, roads, parks, water all use `SHADING_MODE_UNSHADED`
+- This makes everything look paper-flat
+- No depth perception from shadows/lighting
 
-**Quick version (5 min):** Just read items 1, 2, and 3
+**What to do:**
+1. Remove `SHADING_MODE_UNSHADED` from all material creation
+2. Restore PBR shading (StandardMaterial3D default)
+3. Keep vibrant colors but with proper lighting
+4. Re-enable reflections on water/windows
+5. Test in first-person view
+
+**Files to modify:**
+- `scripts/generators/building_generator_mesh.gd` - 4 functions
+- `scripts/generators/road_generator.gd` - 1 function
+- `scripts/generators/park_generator.gd` - 1 inline material
+- `scripts/generators/water_generator.gd` - 2 locations
+
+**Expected result:** Objects have depth from lighting, not flat anymore
 
 ---
 
-## 🚀 Phase 2 Overview
+## 🎯 Next Priority: Phase 3B (8-12 hours, multiple sessions)
+**Implement Building Wall Thickness**
 
-### What We're Building
+This is THE most important change for first-person feel.
 
-Transform the rendering pipeline from:
+**Current state:**
 ```
-3D Scene → Render at 1920×1080 → Display
+Building = hollow box with 6 thin faces
+  If you look at wall edge: paper-thin (no thickness)
 ```
 
-To:
+**Target state:**
 ```
-3D Scene → SubViewport (480×360) → Palette Shader → Dithering → Upscale → Display
+Building = solid walls with actual volume
+  Walls have thickness (15-30cm)
+  Windows recessed into walls
+  Visible wall edges/corners
 ```
 
-### Key Files to Modify
+**Approach (Hybrid):**
+- Main walls: Double-sided with thickness
+- Window areas: Volumetric frames with depth
+- Architectural details: Separate geometry
 
-**Major refactor:**
-- `scripts/city_renderer.gd` - Create SubViewport, move all 3D content inside
-
-**Minor changes:**
-- `scripts/city/camera_controller.gd` - Update camera parent reference
-- `scripts/city/chunk_manager.gd` - Update scene_root reference
-- `scripts/city/debug_ui.gd` - Ensure native res rendering
-
-**New files:**
-- `shaders/retro_3d.gdshader` - Palette + dithering shader
-- `visuals/palettes/psx_64.gd` - PSX 64-color palette
-- `visuals/palettes/saturn_64.gd` - Saturn palette
-- `scripts/retro_presets.gd` - Resolution/palette constants
+**Implementation steps (spread over multiple sessions):**
+1. Create wall volume generation system
+2. Implement window recess/depth
+3. Add window frames as 3D geometry
+4. Add ledges/cornices
+5. Test and optimize
 
 ---
 
-## 📋 Phase 2 Task Checklist
+## 📚 Key Documents
 
-### Part 1: SubViewport Architecture (2-3 hours)
-- [ ] Read architecture documentation
-- [ ] Refactor city_renderer.gd _ready()
-- [ ] Create SubViewport (480×360)
-- [ ] Move Camera3D into SubViewport
-- [ ] Move DirectionalLight3D into SubViewport
-- [ ] Move WorldEnvironment into SubViewport
-- [ ] Update chunk_manager scene_root reference
-- [ ] Create upscaling display (CanvasLayer + TextureRect)
-- [ ] Test basic rendering works
+**Read these before starting:**
+1. `.planning_docs/plan/NEW_DIRECTION_realistic_geometry.md` - Full plan
+2. `.planning_docs/PROGRESS.md` - What happened in Phase 2
+3. This file - Quick start guide
 
-### Part 2: Shaders (1-2 hours)
-- [ ] Research/create color palettes
-- [ ] Implement retro_3d.gdshader
-- [ ] Add Bayer 8×8 dithering matrix
-- [ ] Implement palette quantization
-- [ ] Test shader with different palettes
-
-### Part 3: Integration (1 hour)
-- [ ] Fix camera_controller.gd references
-- [ ] Fix debug_ui.gd rendering
-- [ ] Add resolution presets
-- [ ] Add palette presets
-- [ ] Test resolution switching
-- [ ] Test palette switching
-
-### Part 4: Polish (1 hour)
-- [ ] Add debug UI controls
-- [ ] Tune dithering strength
-- [ ] Test performance (should be 60fps!)
-- [ ] Visual comparison screenshots
-- [ ] Document results
+**Current generators (what you'll modify):**
+- `scripts/generators/building_generator_mesh.gd` - Buildings
+- `scripts/generators/road_generator.gd` - Roads
+- `scripts/generators/park_generator.gd` - Parks
+- `scripts/generators/water_generator.gd` - Water
 
 ---
 
-## 🎨 Visual Settings We're Implementing
+## 🔧 Current State of Code
 
-### Resolution Presets
-- 240p (320×240) - Extreme retro
-- 360p (480×360) - **Default** - Sweet spot
-- 480p (640×480) - Softer retro
-- 540p (960×540) - Subtle effect
+### What's Working (Keep!)
+- ✅ Phase 1 LoadingQueue (performance system) - **Don't touch this!**
+- ✅ Chunk streaming (smooth, no stuttering)
+- ✅ MSAA 4x anti-aliasing enabled
+- ✅ Native resolution rendering (SubViewport removed)
 
-### Palette Presets
-- PSX (64 colors) - **Default** - Muted, warm tones
-- Saturn (64 colors) - Brighter, more saturated
-- Limited (32 colors) - Strong constraint
-- Extended (256 colors) - More flexibility
+### What's Broken (Needs fixing)
+- ❌ All materials are UNSHADED (looks flat/paper-like)
+- ❌ Buildings are thin boxes (no wall thickness)
+- ❌ Windows are painted rectangles (no depth)
+- ❌ No architectural detail for close viewing
+- ❌ Roads are flat planes (no curbs)
 
-### Configurable Parameters
-- Dithering strength (0.0 - 2.0)
-- Dithering enable/disable
-- Bayer matrix size (4×4 or 8×8)
-- Debug palette view
-
----
-
-## ⚠️ Potential Issues to Watch For
-
-### 1. Reference Errors
-**Problem:** Components expecting CityRenderer as parent
-**Solution:** Update all references to use SubViewport
-
-### 2. Mouse Coordinates
-**Problem:** Mouse picking may need coordinate conversion
-**Solution:** Scale mouse coords from window to SubViewport
-
-### 3. UI Rendering
-**Problem:** Debug UI might render at low-res
-**Solution:** Keep DebugUI outside SubViewport
-
-### 4. Performance
-**Problem:** Shader might be slower than expected
-**Solution:** Profile, optimize palette lookup if needed
+### Recent Changes (Session #002)
+- Tried flat/low-poly aesthetic (wrong direction)
+- All materials changed to UNSHADED
+- Colors changed to vibrant pastels
+- SubViewport architecture added then removed
+- Result: "Origami city" - not suitable for first-person
 
 ---
 
-## 🧪 Testing Strategy
+## 🎮 Testing Checklist
 
-### Basic Tests
-1. Launch game - verify rendering works
-2. Move camera - verify no crashes
-3. Load chunks - verify loading still works
-4. Check debug UI - verify readable
+After Phase 3A (shading fix):
+- [ ] Load game and walk around in first-person
+- [ ] Do objects have depth from lighting?
+- [ ] Are shadows helping show 3D volume?
+- [ ] Is it better than flat/unshaded look?
 
-### Visual Tests
-1. Gradients - verify dithering smooth
-2. Different palettes - verify all work
-3. Different resolutions - verify all work
-4. Color variety - verify palette coverage
-
-### Performance Tests
-1. Measure FPS - should be 60+ now
-2. Dense areas - verify maintains 60fps
-3. Rapid movement - verify smooth
+After Phase 3B (wall thickness):
+- [ ] Walk up close to buildings
+- [ ] Can you see wall thickness at edges?
+- [ ] Do windows look recessed?
+- [ ] Does it feel like real 3D architecture?
 
 ---
 
-## 💡 Quick Tips
+## 💡 Remember
 
-### If Stuck on SubViewport
-- Start small: Get basic SubViewport rendering first
-- Then add shaders
-- Keep original pixelate.gdshader as reference
+**Goal:** First-person world simulator
+- Players walk around at 2m viewing distance
+- Need real 3D volume (wall thickness visible)
+- Need architectural detail (not distant-view optimization)
+- Performance still important (keep LoadingQueue!)
 
-### If Shader Not Working
-- Test with simple shader first (just pass through color)
-- Add palette quantization
-- Then add dithering
-- Debug one feature at a time
-
-### If Performance Still Low
-- Check SubViewport size is actually 480×360
-- Verify texture_filter = NEAREST
-- Profile to find bottleneck
-- May need to reduce chunk load radius further
+**Not the goal:** Distant city view, artistic minimalism, retro aesthetic
 
 ---
 
-## 📊 Success Criteria
+## ⚡ Quick Commands
 
-At the end of Phase 2, you should have:
-- ✅ Game renders at 480×360 internally
-- ✅ Upscales to window with nearest-neighbor
-- ✅ Palette quantization visible
-- ✅ Dithering smooth and configurable
-- ✅ 60fps or better performance
-- ✅ Runtime switchable settings
-- ✅ Authentic retro aesthetic
-
----
-
-## 🚨 Emergency Rollback
-
-If Phase 2 breaks things badly:
-
+Start development server:
 ```bash
-# Revert city_renderer.gd
-git checkout HEAD -- scripts/city_renderer.gd
-
-# Revert other changes
-git checkout HEAD -- scripts/city/camera_controller.gd
-git checkout HEAD -- scripts/city/chunk_manager.gd
+godot --path . scenes/city_renderer.tscn
 ```
 
-Or create a git branch before starting:
+Run tests:
 ```bash
-git checkout -b phase-2-visuals
-# Work happens here
-# If good: git merge
-# If bad: git checkout main
+# No automated tests yet - manual testing in-game
 ```
 
 ---
 
-## 📞 Need Help?
-
-Reference these docs:
-- Architecture questions → `visuals/native-lowres-architecture.md`
-- Shader questions → `visuals/shader-design.md`
-- What to modify → `code/files-to-modify.md`
-- Overall plan → `plan/phase-2-visuals.md`
-
----
-
-## 🎯 First Steps When You Start
-
-1. **Read** this file
-2. **Read** `.planning_docs/plan/phase-2-visuals.md`
-3. **Create** a new session log: `sessions/2025-XX-XX-session-002.md`
-4. **Update** PROGRESS.md (mark Phase 2 as "in progress")
-5. **Begin** with Task 2.1 (SubViewport architecture design review)
-
----
-
-**Ready to make it look retro! 🎮✨**
-
-Last Updated: 2025-01-23
-Estimated Time: 5-7 hours total
-Expected Outcome: Smooth 60fps retro aesthetic
+**Let's build a real first-person world!** 🏗️

@@ -17,7 +17,7 @@ const LABEL_FONT_SIZE = 96  # Park label font size
 # ========================================================================
 
 ## Create a park mesh from footprint data
-static func create_park(footprint: Array, park_data: Dictionary, parent: Node3D) -> MeshInstance3D:
+static func create_park(footprint: Array, park_data: Dictionary, parent: Node) -> MeshInstance3D:
 	var park_name = park_data.get("name", "unnamed")
 
 	# Validate polygon has enough points
@@ -77,12 +77,11 @@ static func create_park(footprint: Array, park_data: Dictionary, parent: Node3D)
 	mesh_instance.mesh = array_mesh
 	mesh_instance.position = Vector3(center.x, 0.0, -center.y)  # Ground level
 
-	# DARK SATURATED green opaque material
+	# Vibrant green grass material with PBR shading
 	var material = StandardMaterial3D.new()
-	material.albedo_color = Color(0.1, 0.5, 0.1)  # DARK GREEN - very visible
-	material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-	material.roughness = 0.9
-	material.metallic = 0.0
+	material.albedo_color = Color.html("#66BB6A")  # Vibrant fresh green
+	material.roughness = 0.9  # Very rough for grass
+	material.metallic = 0.0   # Non-metallic
 	mesh_instance.material_override = material
 
 	parent.add_child(mesh_instance)
