@@ -127,10 +127,12 @@ func _initialize_components(osm_data: OSMDataComplete):
 	# 2. Create ChunkManager with factory
 	chunk_manager = ChunkManager.new(feature_factory, self)
 	chunk_manager.chunk_size = 500.0
-	chunk_manager.chunk_load_radius = 1000.0
-	chunk_manager.chunk_unload_radius = 1500.0
+	chunk_manager.chunk_load_radius = 750.0  # Reduced from 1000m for better FPS
+	chunk_manager.chunk_unload_radius = 1000.0  # Reduced from 1500m
 	chunk_manager.chunk_update_interval = 1.0
 	chunk_manager.max_chunks_per_frame = 2
+
+	print("   ⚡ Performance: Reduced load radius to 750m for better FPS")
 
 	# Organize data into chunks
 	chunk_manager.organize_data(osm_data)
@@ -268,6 +270,9 @@ func _on_chunk_viz_toggled(enabled: bool):
 # ========================================================================
 
 func _setup_environment():
+	# PERFORMANCE MODE: Set to true for better FPS
+	var performance_mode = true  # Change to false for high quality
+
 	# Directional light (sun)
 	var light = DirectionalLight3D.new()
 	light.position = Vector3(0, 100, 0)
@@ -276,12 +281,19 @@ func _setup_environment():
 	light.light_energy = 1.3
 	light.light_color = Color(1.0, 0.98, 0.95)
 
-	# High-quality shadows
-	light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	light.directional_shadow_split_1 = 0.05
-	light.directional_shadow_split_2 = 0.15
-	light.directional_shadow_split_3 = 0.35
-	light.directional_shadow_max_distance = 500.0
+	if performance_mode:
+		# PERFORMANCE: Simple 2-split shadows (much faster)
+		light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		light.directional_shadow_max_distance = 300.0  # Shorter distance
+		print("   ⚡ Performance mode: 2-split shadows, 300m distance")
+	else:
+		# QUALITY: High-quality 4-split shadows (slower)
+		light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+		light.directional_shadow_split_1 = 0.05
+		light.directional_shadow_split_2 = 0.15
+		light.directional_shadow_split_3 = 0.35
+		light.directional_shadow_max_distance = 500.0
+
 	light.shadow_bias = 0.02
 	light.shadow_normal_bias = 1.0
 
@@ -310,19 +322,29 @@ func _setup_environment():
 	env.fog_light_energy = 1.0
 	env.fog_density = 0.0008
 
-	# SSAO
-	env.ssao_enabled = true
-	env.ssao_radius = 2.0
-	env.ssao_intensity = 1.5
-	env.ssao_power = 2.0
-	env.ssao_detail = 0.5
+	if performance_mode:
+		# PERFORMANCE: SSAO disabled (big FPS boost!)
+		env.ssao_enabled = false
+		print("   ⚡ Performance mode: SSAO disabled")
+	else:
+		# QUALITY: SSAO enabled
+		env.ssao_enabled = true
+		env.ssao_radius = 2.0
+		env.ssao_intensity = 1.5
+		env.ssao_power = 2.0
+		env.ssao_detail = 0.5
 
-	# Glow/Bloom
-	env.glow_enabled = true
-	env.glow_intensity = 0.3
-	env.glow_strength = 0.8
-	env.glow_bloom = 0.2
-	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+	if performance_mode:
+		# PERFORMANCE: Glow disabled (moderate FPS boost)
+		env.glow_enabled = false
+		print("   ⚡ Performance mode: Glow/Bloom disabled")
+	else:
+		# QUALITY: Glow/Bloom enabled
+		env.glow_enabled = true
+		env.glow_intensity = 0.3
+		env.glow_strength = 0.8
+		env.glow_bloom = 0.2
+		env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 
 	var world_env = WorldEnvironment.new()
 	world_env.environment = env

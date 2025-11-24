@@ -44,6 +44,9 @@ var water_data_by_chunk: Dictionary = {}     # Vector2i → Array[WaterData]
 # Active chunks (currently loaded)
 var active_chunks: Dictionary = {}  # Vector2i → Node3D (chunk container)
 
+# Chunk loading states (for queue-based loading)
+var chunk_states: Dictionary = {}  # Vector2i → "unloaded" | "loading" | "loaded"
+
 # Feature tracking (for cleanup during unload)
 var buildings: Array = []  # Array of {node, position}
 var roads: Array = []      # Array of {node, path, position}
@@ -54,6 +57,10 @@ var update_timer: float = 0.0
 # References to dependencies (injected)
 var feature_factory = null  # FeatureFactory instance
 var scene_root: Node3D = null  # Parent node for chunks
+var loading_queue = null  # LoadingQueue instance
+
+# Camera position tracking (for priority calculation)
+var last_camera_pos: Vector2 = Vector2.ZERO
 
 # ========================================================================
 # INITIALIZATION
@@ -62,6 +69,16 @@ var scene_root: Node3D = null  # Parent node for chunks
 func _init(p_feature_factory, p_scene_root: Node3D):
 	feature_factory = p_feature_factory
 	scene_root = p_scene_root
+
+	# Create loading queue
+	const LoadingQueue = preload("res://scripts/city/loading_queue.gd")
+	loading_queue = LoadingQueue.new()
+	loading_queue.frame_budget_ms = 5.0
+	loading_queue.enable_logging = true
+
+	# Connect signals
+	loading_queue.chunk_fully_loaded.connect(_on_chunk_fully_loaded)
+	loading_queue.work_completed.connect(_on_work_completed)
 
 ## Organize all data into chunks (called at startup)
 func organize_data(osm_data: OSMDataComplete):
@@ -96,63 +113,80 @@ func load_initial_chunks(center_pos: Vector2) -> int:
 
 ## Call this every frame to update streaming
 func update(delta: float, camera_pos: Vector3):
+	# Process loading queue every frame
+	var camera_pos_2d = Vector2(camera_pos.x, -camera_pos.z)
+	last_camera_pos = camera_pos_2d
+	loading_queue.process(delta)
+
+	# Check for streaming updates less frequently
 	update_timer += delta
 	if update_timer >= chunk_update_interval:
-		var camera_pos_2d = Vector2(camera_pos.x, -camera_pos.z)
 		_update_streaming(camera_pos_2d)
-		_load_distant_water(camera_pos_2d, chunk_load_radius * 2.0)
+		_queue_distant_water(camera_pos_2d, chunk_load_radius * 2.0)
 		update_timer = 0.0
 
 # ========================================================================
 # CHUNK OPERATIONS
 # ========================================================================
 
-## Load a chunk (create all buildings/roads/etc in this chunk)
+## Load a chunk (queue work items for gradual loading)
 func load_chunk(chunk_key: Vector2i):
-	if active_chunks.has(chunk_key):
-		return  # Already loaded
+	# Check if already loaded or loading
+	var state = chunk_states.get(chunk_key, "unloaded")
+	if state == "loaded" or state == "loading":
+		return
 
-	# Create chunk container
+	# Create chunk container immediately (lightweight)
 	var chunk_node = Node3D.new()
 	chunk_node.name = "Chunk_%d_%d" % [chunk_key.x, chunk_key.y]
 	scene_root.add_child(chunk_node)
 
-	# Get feature counts
+	# Store chunk reference
+	active_chunks[chunk_key] = chunk_node
+
+	# Mark as loading
+	chunk_states[chunk_key] = "loading"
+
+	# Get feature data
 	var buildings_in_chunk = building_data_by_chunk.get(chunk_key, [])
 	var roads_in_chunk = road_data_by_chunk.get(chunk_key, [])
 	var parks_in_chunk = park_data_by_chunk.get(chunk_key, [])
 	var water_in_chunk = water_data_by_chunk.get(chunk_key, [])
 
-	# Load features using factory
-	feature_factory.create_buildings_for_chunk(buildings_in_chunk, chunk_node, buildings)
-	feature_factory.create_roads_for_chunk(roads_in_chunk, chunk_node, roads)
-	feature_factory.create_parks_for_chunk(parks_in_chunk, chunk_node)
-	feature_factory.create_water_for_chunk(water_in_chunk, chunk_node)
+	# Create work items and queue them
+	var work_items = feature_factory.create_work_items_for_chunk(
+		chunk_key,
+		chunk_node,
+		buildings_in_chunk,
+		roads_in_chunk,
+		parks_in_chunk,
+		water_in_chunk,
+		buildings,
+		roads,
+		last_camera_pos
+	)
 
-	# Store chunk reference
-	active_chunks[chunk_key] = chunk_node
+	# Queue all work items
+	for item in work_items:
+		loading_queue.queue_work(item)
 
-	# Log if significant content
+	# Log chunk queuing
 	var total_features = buildings_in_chunk.size() + roads_in_chunk.size() + parks_in_chunk.size() + water_in_chunk.size()
 	if total_features > 0:
-		print("   📦 Loaded chunk (", chunk_key.x, ",", chunk_key.y, "): ",
+		print("   📦 Queued chunk (", chunk_key.x, ",", chunk_key.y, "): ",
 			  buildings_in_chunk.size(), " buildings, ",
 			  roads_in_chunk.size(), " roads, ",
 			  parks_in_chunk.size(), " parks, ",
-			  water_in_chunk.size(), " water")
-
-	# Emit signal
-	chunk_loaded.emit(chunk_key, {
-		"buildings": buildings_in_chunk.size(),
-		"roads": roads_in_chunk.size(),
-		"parks": parks_in_chunk.size(),
-		"water": water_in_chunk.size()
-	})
+			  water_in_chunk.size(), " water (", work_items.size(), " work items)")
 
 ## Unload a chunk (free all nodes in this chunk)
 func unload_chunk(chunk_key: Vector2i):
 	if not active_chunks.has(chunk_key):
 		return  # Not loaded
+
+	# Cancel any pending work for this chunk
+	if loading_queue.is_chunk_loading(chunk_key):
+		loading_queue.cancel_chunk(chunk_key)
 
 	var chunk_node = active_chunks[chunk_key]
 
@@ -207,6 +241,9 @@ func unload_chunk(chunk_key: Vector2i):
 	# Free the chunk and all its children
 	chunk_node.queue_free()
 	active_chunks.erase(chunk_key)
+
+	# Update state
+	chunk_states.erase(chunk_key)
 
 	# Emit signal
 	chunk_unloaded.emit(chunk_key)
@@ -359,14 +396,24 @@ func _organize_water_into_chunks(water_data: Array):
 
 ## Get stats for external display
 func get_stats() -> Dictionary:
+	var queue_stats = loading_queue.get_stats() if loading_queue else {}
+
 	return {
 		"active_chunks": active_chunks.size(),
 		"buildings": buildings.size(),
-		"roads": roads.size()
+		"roads": roads.size(),
+		"loading_chunks": chunk_states.values().count("loading"),
+		"loaded_chunks": chunk_states.values().count("loaded"),
+		"queue_size": queue_stats.get("queue_size", 0),
+		"items_this_frame": queue_stats.get("items_this_frame", 0)
 	}
 
-## Load large water bodies from distant chunks (lakes should be visible from far away)
-func _load_distant_water(camera_pos: Vector2, extended_radius: float):
+## Queue large water bodies from distant chunks (lakes should be visible from far away)
+func _queue_distant_water(camera_pos: Vector2, extended_radius: float):
+	# PROFILING: Start timing
+	var distant_water_start = Time.get_ticks_usec()
+	var water_bodies_loaded = 0
+
 	var distant_chunks = get_chunks_in_radius(camera_pos, extended_radius)
 
 	for chunk_key in distant_chunks:
@@ -390,9 +437,21 @@ func _load_distant_water(camera_pos: Vector2, extended_radius: float):
 				# Check if this specific water body is already rendered
 				var water_id = "DistantWater_" + str(chunk_key.x) + "_" + str(chunk_key.y) + "_" + water_name
 				if not scene_root.has_node(NodePath(water_id)):
-					var water_node = WaterGenerator.create_water(footprint, water_data, scene_root)
-					if water_node:
-						water_node.name = water_id
+					# Queue distant water work item
+					loading_queue.queue_work({
+						"type": "distant_water",
+						"chunk_key": chunk_key,
+						"id": water_id,
+						"data": water_data,
+						"scene_root": scene_root,
+						"priority": camera_pos.distance_to(center),
+						"estimated_cost_ms": 2.0,  # From profiling
+						"queued_time": Time.get_ticks_msec()
+					})
+					water_bodies_loaded += 1
+
+	if water_bodies_loaded > 0:
+		print("   💧 Queued ", water_bodies_loaded, " distant water bodies for loading")
 
 ## Calculate polygon area (for water size detection)
 func _calculate_polygon_area(polygon: Array) -> float:
@@ -402,3 +461,32 @@ func _calculate_polygon_area(polygon: Array) -> float:
 		area += polygon[i].x * polygon[j].y
 		area -= polygon[j].x * polygon[i].y
 	return abs(area) / 2.0
+
+# ========================================================================
+# SIGNAL HANDLERS
+# ========================================================================
+
+## Called when a chunk is fully loaded (all work items completed)
+func _on_chunk_fully_loaded(chunk_key: Vector2i):
+	# Update state
+	chunk_states[chunk_key] = "loaded"
+
+	# Get feature counts for this chunk
+	var buildings_count = building_data_by_chunk.get(chunk_key, []).size()
+	var roads_count = road_data_by_chunk.get(chunk_key, []).size()
+	var parks_count = park_data_by_chunk.get(chunk_key, []).size()
+	var water_count = water_data_by_chunk.get(chunk_key, []).size()
+
+	# Emit chunk_loaded signal
+	chunk_loaded.emit(chunk_key, {
+		"buildings": buildings_count,
+		"roads": roads_count,
+		"parks": parks_count,
+		"water": water_count
+	})
+
+## Called when individual work items complete
+func _on_work_completed(type: String, chunk_key: Vector2i, node: Node3D):
+	# Optional: track individual completions
+	# Currently we just rely on chunk_fully_loaded
+	pass

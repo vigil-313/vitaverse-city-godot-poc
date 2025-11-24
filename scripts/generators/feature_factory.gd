@@ -59,3 +59,121 @@ func create_water_for_chunk(water_data_array: Array, parent: Node3D):
 		var footprint = water_data.get("footprint", [])
 		if footprint.size() >= 3:
 			WaterGenerator.create_water(footprint, water_data, parent)
+
+# ========================================================================
+# WORK ITEM CREATION (for LoadingQueue)
+# ========================================================================
+
+## Create work items for all buildings in a chunk
+func create_building_work_items(buildings_data: Array, chunk_key: Vector2i, chunk_node: Node3D, tracking_array: Array, camera_pos: Vector2) -> Array:
+	var work_items = []
+
+	for building_data in buildings_data:
+		var center = building_data.get("center", Vector2.ZERO)
+		var priority = camera_pos.distance_to(center)
+
+		work_items.append({
+			"type": "building",
+			"chunk_key": chunk_key,
+			"id": "building_" + str(building_data.get("id", "")),
+			"data": building_data,
+			"chunk_node": chunk_node,
+			"tracking_array": tracking_array,
+			"priority": priority,
+			"estimated_cost_ms": 0.4,  # Average from profiling
+			"queued_time": Time.get_ticks_msec()
+		})
+
+	return work_items
+
+## Create work items for all roads in a chunk
+func create_road_work_items(roads_data: Array, chunk_key: Vector2i, chunk_node: Node3D, tracking_array: Array, camera_pos: Vector2) -> Array:
+	var work_items = []
+
+	for road_data in roads_data:
+		var path = road_data.get("path", [])
+		if path.size() < 2:
+			continue
+
+		# Calculate center of road for priority
+		var center = Vector2.ZERO
+		for point in path:
+			center += point
+		center /= path.size()
+
+		var priority = camera_pos.distance_to(center)
+
+		work_items.append({
+			"type": "road",
+			"chunk_key": chunk_key,
+			"id": "road_" + str(road_data.get("id", "")),
+			"data": road_data,
+			"chunk_node": chunk_node,
+			"tracking_array": tracking_array,
+			"priority": priority,
+			"estimated_cost_ms": 0.03,  # Average from profiling
+			"queued_time": Time.get_ticks_msec()
+		})
+
+	return work_items
+
+## Create work items for all parks in a chunk
+func create_park_work_items(parks_data: Array, chunk_key: Vector2i, chunk_node: Node3D, camera_pos: Vector2) -> Array:
+	var work_items = []
+
+	for park_data in parks_data:
+		var footprint = park_data.get("footprint", [])
+		if footprint.size() < 3:
+			continue
+
+		var center = park_data.get("center", Vector2.ZERO)
+		var priority = camera_pos.distance_to(center)
+
+		work_items.append({
+			"type": "park",
+			"chunk_key": chunk_key,
+			"id": "park_" + str(park_data.get("id", "")),
+			"data": park_data,
+			"chunk_node": chunk_node,
+			"priority": priority,
+			"estimated_cost_ms": 0.1,  # Average from profiling
+			"queued_time": Time.get_ticks_msec()
+		})
+
+	return work_items
+
+## Create work items for all water features in a chunk
+func create_water_work_items(water_data_array: Array, chunk_key: Vector2i, chunk_node: Node3D, camera_pos: Vector2) -> Array:
+	var work_items = []
+
+	for water_data in water_data_array:
+		var footprint = water_data.get("footprint", [])
+		if footprint.size() < 3:
+			continue
+
+		var center = water_data.get("center", Vector2.ZERO)
+		var priority = camera_pos.distance_to(center)
+
+		work_items.append({
+			"type": "water",
+			"chunk_key": chunk_key,
+			"id": "water_" + str(water_data.get("id", "")),
+			"data": water_data,
+			"chunk_node": chunk_node,
+			"priority": priority,
+			"estimated_cost_ms": 0.1,  # Average from profiling
+			"queued_time": Time.get_ticks_msec()
+		})
+
+	return work_items
+
+## Create work items for all features in a chunk (convenience method)
+func create_work_items_for_chunk(chunk_key: Vector2i, chunk_node: Node3D, buildings_data: Array, roads_data: Array, parks_data: Array, water_data: Array, tracking_buildings: Array, tracking_roads: Array, camera_pos: Vector2) -> Array:
+	var all_items = []
+
+	all_items.append_array(create_building_work_items(buildings_data, chunk_key, chunk_node, tracking_buildings, camera_pos))
+	all_items.append_array(create_road_work_items(roads_data, chunk_key, chunk_node, tracking_roads, camera_pos))
+	all_items.append_array(create_park_work_items(parks_data, chunk_key, chunk_node, camera_pos))
+	all_items.append_array(create_water_work_items(water_data, chunk_key, chunk_node, camera_pos))
+
+	return all_items
