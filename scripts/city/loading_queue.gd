@@ -221,11 +221,11 @@ func _execute_building(work_item: Dictionary) -> bool:
 		return false
 
 	# Import generator
-	const BuildingGeneratorMesh = preload("res://scripts/generators/building_generator_mesh.gd")
+	const BuildingOrchestrator = preload("res://scripts/generators/building/building_orchestrator.gd")
 
 	# Generate building
 	var center = building_data.get("center", Vector2.ZERO)
-	var building_node = BuildingGeneratorMesh.create_building(building_data, chunk_node, true)
+	var building_node = BuildingOrchestrator.create_building(building_data, chunk_node, true)
 
 	if building_node:
 		building_node.position = Vector3(center.x, 0, -center.y)

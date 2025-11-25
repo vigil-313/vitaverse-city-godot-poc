@@ -19,7 +19,6 @@ extends Node3D
 const OSMDataComplete = preload("res://scripts/data/osm_data_complete.gd")
 
 # Generator layer
-const BuildingGeneratorMesh = preload("res://scripts/generators/building_generator_mesh.gd")
 const RoadGenerator = preload("res://scripts/generators/road_generator.gd")
 const ParkGenerator = preload("res://scripts/generators/park_generator.gd")
 const WaterGenerator = preload("res://scripts/generators/water_generator.gd")
