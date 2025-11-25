@@ -39,18 +39,22 @@ var scene_root: Node3D
 ## Chunk manager reference for visualization
 var chunk_manager = null  # ChunkManager instance
 
+## Visual manager reference for visual controls
+var visual_manager = null  # VisualManager instance
+
 # ========================================================================
 # INITIALIZATION
 # ========================================================================
 
-func setup(parent: Node3D, p_chunk_manager):
+func setup(parent: Node3D, p_chunk_manager, p_visual_manager = null):
 	scene_root = parent
 	chunk_manager = p_chunk_manager
+	visual_manager = p_visual_manager
 
 	_create_hud(parent)
 	_create_debug_panel(parent)
 
-	print("🐛 Debug UI created (F3 for panel, F4 for chunk viz)")
+	print("🐛 Debug UI created (F3 for panel, F4 for chunk viz, F5/F6 for visuals)")
 
 # ========================================================================
 # HUD
@@ -60,13 +64,33 @@ func _create_hud(parent: Node3D):
 	var canvas = CanvasLayer.new()
 	parent.add_child(canvas)
 
+	# Create background panel
+	var hud_panel = PanelContainer.new()
+	hud_panel.position = Vector2(10, 10)
+	canvas.add_child(hud_panel)
+
+	# Style the panel with translucent background
+	var style_box = StyleBoxFlat.new()
+	style_box.bg_color = Color(0, 0, 0, 0.6)  # Black with 60% opacity
+	style_box.border_color = Color(0.3, 0.3, 0.3, 0.8)
+	style_box.border_width_left = 1
+	style_box.border_width_right = 1
+	style_box.border_width_top = 1
+	style_box.border_width_bottom = 1
+	style_box.corner_radius_top_left = 4
+	style_box.corner_radius_top_right = 4
+	style_box.corner_radius_bottom_left = 4
+	style_box.corner_radius_bottom_right = 4
+	style_box.content_margin_left = 8
+	style_box.content_margin_right = 8
+	style_box.content_margin_top = 6
+	style_box.content_margin_bottom = 6
+	hud_panel.add_theme_stylebox_override("panel", style_box)
+
 	hud_label = Label.new()
-	hud_label.position = Vector2(20, 20)
-	hud_label.add_theme_font_size_override("font_size", 14)
-	hud_label.add_theme_color_override("font_color", Color(1, 1, 0))  # Yellow
-	hud_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	hud_label.add_theme_constant_override("outline_size", 2)
-	canvas.add_child(hud_label)
+	hud_label.add_theme_font_size_override("font_size", 12)  # Smaller font
+	hud_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))  # Light gray instead of yellow
+	hud_panel.add_child(hud_label)
 
 	print("📊 HUD created")
 
@@ -89,7 +113,18 @@ func update_hud(camera_pos: Vector3, heading_info: Dictionary, current_speed: fl
 		chunk_stats.get("buildings", 0),
 		chunk_stats.get("roads", 0)
 	]
-	hud_text += "FPS: %d" % Engine.get_frames_per_second()
+	hud_text += "FPS: %d\n" % Engine.get_frames_per_second()
+
+	# Visual system info
+	if visual_manager:
+		hud_text += "\n"
+		hud_text += "VISUALS (F5=Preset F6=Time F7=Style+):\n"
+		hud_text += "  Preset: %s\n" % visual_manager.current_preset
+		if visual_manager.lighting_controller:
+			var time = visual_manager.lighting_controller.current_time
+			var weather = visual_manager.lighting_controller.Weather.keys()[visual_manager.lighting_controller.current_weather]
+			hud_text += "  Time: %.1fh (%s) | Weather: %s\n" % [time, _get_time_label(time), weather]
+		hud_text += "  Stylization: %.0f%%" % (visual_manager.stylization_blend * 100)
 
 	hud_label.text = hud_text
 
@@ -273,6 +308,24 @@ func handle_input(event: InputEvent):
 			chunk_viz_toggled.emit(chunk_viz_enabled)
 			print("🔲 Chunk visualization: ", "ON" if chunk_viz_enabled else "OFF")
 
+		# Visual system controls
+		if visual_manager:
+			# F5: Cycle through presets
+			if event.keycode == KEY_F5 and event.pressed:
+				_cycle_visual_preset()
+
+			# F6: Change time of day (+2 hours)
+			if event.keycode == KEY_F6 and event.pressed:
+				_change_time_of_day(2.0)
+
+			# F7: Increase stylization
+			if event.keycode == KEY_F7 and event.pressed:
+				_adjust_stylization(0.1)
+
+			# F8: Decrease stylization
+			if event.keycode == KEY_F8 and event.pressed:
+				_adjust_stylization(-0.1)
+
 # ========================================================================
 # CHUNK VISUALIZATION
 # ========================================================================
@@ -335,3 +388,52 @@ func _create_chunk_visualization(chunk_key: Vector2i):
 
 	scene_root.add_child(viz_node)
 	chunk_viz_nodes[chunk_key] = viz_node
+
+# ========================================================================
+# VISUAL SYSTEM CONTROLS
+# ========================================================================
+
+func _cycle_visual_preset():
+	if not visual_manager or not visual_manager.environment_presets:
+		return
+
+	var presets = visual_manager.environment_presets.get_builtin_preset_names()
+	var current_index = presets.find(visual_manager.current_preset)
+	var next_index = (current_index + 1) % presets.size()
+	var next_preset = presets[next_index]
+
+	visual_manager.apply_preset(next_preset)
+	print("🎨 Visual Preset: ", next_preset)
+
+func _change_time_of_day(hours_delta: float):
+	if not visual_manager or not visual_manager.lighting_controller:
+		return
+
+	var new_time = visual_manager.lighting_controller.current_time + hours_delta
+	visual_manager.set_time_of_day(new_time)
+	print("⏰ Time: %.1fh (%s)" % [visual_manager.lighting_controller.current_time, _get_time_label(visual_manager.lighting_controller.current_time)])
+
+func _adjust_stylization(delta: float):
+	if not visual_manager:
+		return
+
+	var new_value = clamp(visual_manager.stylization_blend + delta, 0.0, 1.0)
+	visual_manager.set_stylization_blend(new_value)
+	print("✨ Stylization: %.0f%%" % (new_value * 100))
+
+func _get_time_label(hour: float) -> String:
+	var h = int(hour) % 24
+	if h >= 5 and h < 7:
+		return "Dawn"
+	elif h >= 7 and h < 11:
+		return "Morning"
+	elif h >= 11 and h < 14:
+		return "Noon"
+	elif h >= 14 and h < 17:
+		return "Afternoon"
+	elif h >= 17 and h < 19:
+		return "Sunset"
+	elif h >= 19 and h < 22:
+		return "Dusk"
+	else:
+		return "Night"

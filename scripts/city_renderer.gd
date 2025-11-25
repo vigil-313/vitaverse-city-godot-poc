@@ -30,6 +30,13 @@ const ChunkManager = preload("res://scripts/city/chunk_manager.gd")
 const CameraController = preload("res://scripts/city/camera_controller.gd")
 const DebugUI = preload("res://scripts/city/debug_ui.gd")
 
+# Visual systems layer
+const VisualManager = preload("res://scripts/visual/visual_manager.gd")
+const MaterialLibrary = preload("res://scripts/visual/material_library.gd")
+const LightingController = preload("res://scripts/visual/lighting_controller.gd")
+const PostProcessingStack = preload("res://scripts/visual/post_processing_stack.gd")
+const EnvironmentPresets = preload("res://scripts/visual/environment_presets.gd")
+
 # ========================================================================
 # EXPORTS
 # ========================================================================
@@ -47,6 +54,17 @@ var chunk_manager: ChunkManager
 var camera_controller: CameraController
 var debug_ui: DebugUI
 var feature_factory: FeatureFactory
+
+# Visual systems
+var visual_manager: VisualManager
+var material_library: MaterialLibrary
+var lighting_controller: LightingController
+var post_processing_stack: PostProcessingStack
+var environment_presets: EnvironmentPresets
+
+# Scene references for visual systems
+var directional_light: DirectionalLight3D
+var world_environment: WorldEnvironment
 
 # Retro rendering components
 var sub_viewport: SubViewport
@@ -77,11 +95,14 @@ func _ready():
 	print("   💧 Water: ", osm_data.water.size())
 	print("")
 
+	# Setup environment first (creates lighting/world_environment nodes)
+	_setup_environment()
+
+	# Initialize visual systems (requires lighting/environment to be set up)
+	_initialize_visual_systems()
+
 	# Initialize components
 	_initialize_components(osm_data)
-
-	# Setup environment
-	_setup_environment()
 
 	# Create ground plane
 	_create_ground_plane()
@@ -99,6 +120,9 @@ func _ready():
 	print("   ESC: Release mouse")
 	print("   F3: Toggle debug panel (chunk settings & speed control)")
 	print("   F4: Toggle chunk visualization")
+	print("   F5: Cycle visual presets")
+	print("   F6: Change time of day")
+	print("   F7/F8: Adjust stylization (+/-)")
 
 func _process(delta: float):
 	# Update camera
@@ -108,6 +132,10 @@ func _process(delta: float):
 	# Update chunk streaming
 	if chunk_manager and camera_controller and camera_controller.camera:
 		chunk_manager.update(delta, camera_controller.camera.global_position)
+
+	# Update visual systems (for dynamic effects like time-of-day)
+	if visual_manager:
+		visual_manager._process(delta)
 
 	# Update HUD
 	if debug_ui and camera_controller and camera_controller.camera:
@@ -138,14 +166,15 @@ func _initialize_components(osm_data: OSMDataComplete):
 	print("🔧 Initializing components...")
 	print("")
 
-	# 1. Create FeatureFactory
+	# 1. Create FeatureFactory and set MaterialLibrary
 	feature_factory = FeatureFactory.new()
+	feature_factory.material_library = material_library
 
 	# 2. Create ChunkManager with factory
 	chunk_manager = ChunkManager.new(feature_factory, self)
 	chunk_manager.chunk_size = 500.0
 	chunk_manager.chunk_load_radius = 750.0  # Reduced from 1000m for better FPS
-	chunk_manager.chunk_unload_radius = 1000.0  # Reduced from 1500m
+	chunk_manager.chunk_unload_radius = 1500.0  # Must be > load_radius + diagonal buffer (750 + 353 = 1103)
 	chunk_manager.chunk_update_interval = 1.0
 	chunk_manager.max_chunks_per_frame = 2
 
@@ -164,10 +193,16 @@ func _initialize_components(osm_data: OSMDataComplete):
 	# Connect camera signals
 	camera_controller.camera_moved.connect(_on_camera_moved)
 
-	# 4. Create DebugUI
+	# Update visual systems with camera reference
+	if visual_manager and camera_controller.camera:
+		visual_manager.camera = camera_controller.camera
+	if post_processing_stack and camera_controller.camera:
+		post_processing_stack.camera = camera_controller.camera
+
+	# 4. Create DebugUI with visual manager
 	debug_ui = DebugUI.new()
 	add_child(debug_ui)
-	debug_ui.setup(self, chunk_manager)
+	debug_ui.setup(self, chunk_manager, visual_manager)
 
 	# Connect debug UI signals
 	debug_ui.settings_apply_requested.connect(_on_debug_settings_apply)
@@ -183,6 +218,51 @@ func _initialize_components(osm_data: OSMDataComplete):
 	chunk_manager.load_initial_chunks(camera_start_pos)
 
 	print("   ✅ Components initialized")
+
+# ========================================================================
+# VISUAL SYSTEMS INITIALIZATION
+# ========================================================================
+
+func _initialize_visual_systems():
+	print("🎨 Initializing visual systems...")
+	print("")
+
+	# 1. Create MaterialLibrary
+	material_library = MaterialLibrary.new()
+	add_child(material_library)
+	material_library.initialize()
+
+	# 2. Create LightingController
+	lighting_controller = LightingController.new()
+	add_child(lighting_controller)
+	lighting_controller.initialize(world_environment, directional_light)
+
+	# 3. Create PostProcessingStack
+	post_processing_stack = PostProcessingStack.new()
+	add_child(post_processing_stack)
+	# Camera will be initialized later, pass null for now
+	post_processing_stack.initialize(null, world_environment)
+
+	# 4. Create EnvironmentPresets
+	environment_presets = EnvironmentPresets.new()
+	add_child(environment_presets)
+
+	# 5. Create VisualManager and inject dependencies
+	visual_manager = VisualManager.new()
+	add_child(visual_manager)
+	visual_manager.initialize(world_environment, directional_light, null)  # Camera set later
+	visual_manager.inject_subsystems(
+		lighting_controller,
+		material_library,
+		post_processing_stack,
+		environment_presets
+	)
+
+	# Apply default preset
+	visual_manager.apply_preset("default")
+
+	print("   ✅ Visual systems initialized with 'default' preset")
+	print("")
 
 # ========================================================================
 # SIGNAL HANDLERS
@@ -249,7 +329,9 @@ func _on_debug_settings_apply(load_radius: float, unload_radius: float, speed_mu
 	# Load chunks within new radius
 	var chunks_to_load = chunk_manager.get_chunks_in_radius(camera_pos_2d, chunk_manager.chunk_load_radius)
 	for chunk_key in chunks_to_load:
-		if not chunk_manager.active_chunks.has(chunk_key):
+		# Check both active_chunks AND chunk_states to prevent duplicate loading
+		var chunk_state = chunk_manager.chunk_states.get(chunk_key, "unloaded")
+		if not chunk_manager.active_chunks.has(chunk_key) and chunk_state == "unloaded":
 			chunk_manager.load_chunk(chunk_key)
 
 	# Load distant water at 2x radius
@@ -287,34 +369,34 @@ func _on_chunk_viz_toggled(enabled: bool):
 # ========================================================================
 
 func _setup_environment():
-	# PERFORMANCE MODE: Set to true for better FPS
-	var performance_mode = true  # Change to false for high quality
+	# PERFORMANCE MODE: Set to false for visual quality (as user wants)
+	var performance_mode = false  # User prioritizes visual quality
 
-	# Directional light (sun) - BRIGHT for flat/low-poly
-	var light = DirectionalLight3D.new()
-	light.position = Vector3(0, 100, 0)
-	light.rotation_degrees = Vector3(-45, -30, 0)  # Slightly higher angle
-	light.shadow_enabled = true
-	light.light_energy = 1.5  # Brighter!
-	light.light_color = Color(1.0, 1.0, 0.98)  # Pure white with slight warmth
+	# Directional light (sun) - Store reference for visual systems
+	directional_light = DirectionalLight3D.new()
+	directional_light.position = Vector3(0, 100, 0)
+	directional_light.rotation_degrees = Vector3(-45, -30, 0)  # Slightly higher angle
+	directional_light.shadow_enabled = true
+	directional_light.light_energy = 1.5  # Brighter!
+	directional_light.light_color = Color(1.0, 1.0, 0.98)  # Pure white with slight warmth
 
 	if performance_mode:
 		# PERFORMANCE: Simple 2-split shadows (much faster)
-		light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-		light.directional_shadow_max_distance = 300.0  # Shorter distance
+		directional_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		directional_light.directional_shadow_max_distance = 300.0  # Shorter distance
 		print("   ⚡ Performance mode: 2-split shadows, 300m distance")
 	else:
 		# QUALITY: High-quality 4-split shadows (slower)
-		light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-		light.directional_shadow_split_1 = 0.05
-		light.directional_shadow_split_2 = 0.15
-		light.directional_shadow_split_3 = 0.35
-		light.directional_shadow_max_distance = 500.0
+		directional_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+		directional_light.directional_shadow_split_1 = 0.05
+		directional_light.directional_shadow_split_2 = 0.15
+		directional_light.directional_shadow_split_3 = 0.35
+		directional_light.directional_shadow_max_distance = 500.0
 
-	light.shadow_bias = 0.02
-	light.shadow_normal_bias = 1.0
+	directional_light.shadow_bias = 0.02
+	directional_light.shadow_normal_bias = 1.0
 
-	add_child(light)
+	add_child(directional_light)
 
 	# Environment
 	var env = Environment.new()
@@ -363,9 +445,10 @@ func _setup_environment():
 		env.glow_bloom = 0.2
 		env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 
-	var world_env = WorldEnvironment.new()
-	world_env.environment = env
-	add_child(world_env)
+	# Store reference for visual systems
+	world_environment = WorldEnvironment.new()
+	world_environment.environment = env
+	add_child(world_environment)
 
 ## Create large ground plane with realistic texture
 func _create_ground_plane():

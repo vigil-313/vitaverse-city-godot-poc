@@ -15,8 +15,10 @@ class_name FeatureFactory
 # INITIALIZATION
 # ========================================================================
 
+var material_library = null  # MaterialLibrary (no type hint to avoid dependency issues)
+
 func _init():
-	pass  # No dependencies needed - all generators are static
+	pass  # MaterialLibrary set externally via property
 
 # ========================================================================
 # CHUNK FEATURE CREATION
@@ -26,7 +28,7 @@ func _init():
 func create_buildings_for_chunk(buildings_data: Array, parent: Node, tracking_array: Array):
 	for building_data in buildings_data:
 		var center = building_data.get("center", Vector2.ZERO)
-		var building = BuildingGeneratorMesh.create_building(building_data, parent, true)
+		var building = BuildingGeneratorMesh.create_building(building_data, parent, true, material_library)
 
 		if building:
 			building.position = Vector3(center.x, 0, -center.y)

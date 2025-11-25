@@ -28,7 +28,7 @@ const MATERIALS = {
 const WALL_THICKNESS = 0.25  # 25cm thick walls (realistic for buildings)
 
 ## Generate complete building from OSM data
-static func create_building(osm_data: Dictionary, parent: Node, detailed: bool = true) -> Node3D:
+static func create_building(osm_data: Dictionary, parent: Node, detailed: bool = true, material_lib = null) -> Node3D:
 	var building = Node3D.new()
 	var building_name = osm_data.get("name", "")
 	if building_name == "":
@@ -46,8 +46,8 @@ static func create_building(osm_data: Dictionary, parent: Node, detailed: bool =
 	var min_level = osm_data.get("min_level", 0)
 	var base_elevation = (layer * 5.0) + (min_level * 3.0)
 
-	# Create building mesh
-	var building_mesh = _create_building_mesh(footprint, center, height, levels, osm_data, detailed)
+	# Create building mesh (with interior walls if detailed)
+	var building_mesh = _create_building_mesh(footprint, center, height, levels, osm_data, detailed, material_lib)
 	building_mesh.position.y = base_elevation
 	building.add_child(building_mesh)
 
@@ -74,7 +74,7 @@ static func create_building(osm_data: Dictionary, parent: Node, detailed: bool =
 	return building
 
 ## Create complete building mesh (walls + roof + windows)
-static func _create_building_mesh(footprint: Array, center: Vector2, height: float, levels: int, osm_data: Dictionary, detailed: bool) -> MeshInstance3D:
+static func _create_building_mesh(footprint: Array, center: Vector2, height: float, levels: int, osm_data: Dictionary, detailed: bool, material_lib = null) -> MeshInstance3D:
 	var mesh_instance = MeshInstance3D.new()
 	mesh_instance.name = "BuildingMesh"
 
@@ -90,6 +90,7 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 	var window_vertices = PackedVector3Array()
 	var window_normals = PackedVector3Array()
 	var window_uvs = PackedVector2Array()
+	var window_colors = PackedColorArray()  # Per-window emission control
 	var window_indices = PackedInt32Array()
 
 	# Surface 2: Window frames (darker color)
@@ -113,7 +114,7 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 	# Generate walls with windows (now populates separate arrays)
 	_generate_walls_multi_surface(footprint, center, height, levels, osm_data, detailed,
 		wall_vertices, wall_normals, wall_uvs, wall_indices,
-		window_vertices, window_normals, window_uvs, window_indices,
+		window_vertices, window_normals, window_uvs, window_colors, window_indices,
 		frame_vertices, frame_normals, frame_uvs, frame_indices)
 
 	# Generate architectural details - adds to wall geometry
@@ -124,6 +125,13 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 			_generate_floor_ledges(footprint, center, height, levels, wall_vertices, wall_normals, wall_uvs, wall_indices)
 			# Add floor slabs (horizontal concrete floors at each level)
 			_generate_floor_slabs(footprint, center, height, levels, floor_vertices, floor_normals, floor_uvs, floor_indices)
+
+		# DISABLED: Interior walls add too much geometry (performance issue)
+		# TODO: Re-enable with LOD system (only nearest buildings)
+		# var building_type = osm_data.get("building_type", "commercial")
+		# var floor_height = height / float(levels) if levels > 0 else height
+		# var rooms = _subdivide_footprint_into_rooms(footprint, center, building_type, levels)
+		# _create_interior_walls(rooms, floor_height, wall_vertices, wall_normals, wall_uvs, wall_indices)
 
 	# Generate roof (separate surface for OSM colors/materials)
 	var roof_shape = osm_data.get("roof:shape", "")
@@ -174,6 +182,7 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 		window_arrays[Mesh.ARRAY_VERTEX] = window_vertices
 		window_arrays[Mesh.ARRAY_NORMAL] = window_normals
 		window_arrays[Mesh.ARRAY_TEX_UV] = window_uvs
+		window_arrays[Mesh.ARRAY_COLOR] = window_colors  # Per-vertex emission control
 		window_arrays[Mesh.ARRAY_INDEX] = window_indices
 		array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, window_arrays)
 		window_surface_index = current_surface_index
@@ -219,22 +228,22 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 
 	# Apply materials to each surface using tracked indices
 	if wall_surface_index >= 0:
-		mesh_instance.set_surface_override_material(wall_surface_index, _create_building_material(osm_data))
+		mesh_instance.set_surface_override_material(wall_surface_index, _create_building_material(osm_data, material_lib))
 	if window_surface_index >= 0:
-		mesh_instance.set_surface_override_material(window_surface_index, _create_window_material())
+		mesh_instance.set_surface_override_material(window_surface_index, _create_window_material(osm_data, material_lib))
 	if frame_surface_index >= 0:
-		mesh_instance.set_surface_override_material(frame_surface_index, _create_frame_material())
+		mesh_instance.set_surface_override_material(frame_surface_index, _create_frame_material(material_lib))
 	if roof_surface_index >= 0:
-		mesh_instance.set_surface_override_material(roof_surface_index, _create_roof_material(osm_data))
+		mesh_instance.set_surface_override_material(roof_surface_index, _create_roof_material(osm_data, material_lib))
 	if floor_surface_index >= 0:
-		mesh_instance.set_surface_override_material(floor_surface_index, _create_floor_material())
+		mesh_instance.set_surface_override_material(floor_surface_index, _create_floor_material(material_lib))
 
 	return mesh_instance
 
 ## Generate wall geometry with window openings (multi-surface version)
 static func _generate_walls_multi_surface(footprint: Array, center: Vector2, height: float, levels: int, osm_data: Dictionary, detailed: bool,
 	wall_vertices: PackedVector3Array, wall_normals: PackedVector3Array, wall_uvs: PackedVector2Array, wall_indices: PackedInt32Array,
-	window_vertices: PackedVector3Array, window_normals: PackedVector3Array, window_uvs: PackedVector2Array, window_indices: PackedInt32Array,
+	window_vertices: PackedVector3Array, window_normals: PackedVector3Array, window_uvs: PackedVector2Array, window_colors: PackedColorArray, window_indices: PackedInt32Array,
 	frame_vertices: PackedVector3Array, frame_normals: PackedVector3Array, frame_uvs: PackedVector2Array, frame_indices: PackedInt32Array):
 
 	if footprint.size() < 3:
@@ -252,13 +261,13 @@ static func _generate_walls_multi_surface(footprint: Array, center: Vector2, hei
 		# Create wall segment with windows (outputs to separate surfaces)
 		_create_wall_segment_multi_surface(p1, p2, height, floor_height, levels, window_params, detailed,
 			wall_vertices, wall_normals, wall_uvs, wall_indices,
-			window_vertices, window_normals, window_uvs, window_indices,
+			window_vertices, window_normals, window_uvs, window_colors, window_indices,
 			frame_vertices, frame_normals, frame_uvs, frame_indices)
 
 ## Create a single wall segment with window openings (multi-surface version)
 static func _create_wall_segment_multi_surface(p1: Vector2, p2: Vector2, height: float, floor_height: float, levels: int, window_params: Dictionary, detailed: bool,
 	wall_vertices: PackedVector3Array, wall_normals: PackedVector3Array, wall_uvs: PackedVector2Array, wall_indices: PackedInt32Array,
-	window_vertices: PackedVector3Array, window_normals: PackedVector3Array, window_uvs: PackedVector2Array, window_indices: PackedInt32Array,
+	window_vertices: PackedVector3Array, window_normals: PackedVector3Array, window_uvs: PackedVector2Array, window_colors: PackedColorArray, window_indices: PackedInt32Array,
 	frame_vertices: PackedVector3Array, frame_normals: PackedVector3Array, frame_uvs: PackedVector2Array, frame_indices: PackedInt32Array):
 
 	var wall_length = p1.distance_to(p2)
@@ -290,7 +299,7 @@ static func _create_wall_segment_multi_surface(p1: Vector2, p2: Vector2, height:
 			# Create wall segments around windows (multi-surface)
 			_create_wall_with_windows_multi_surface(p1, p2, floor_bottom, floor_top, windows_per_floor, wall_normal, wall_length,
 				wall_vertices, wall_normals, wall_uvs, wall_indices,
-				window_vertices, window_normals, window_uvs, window_indices,
+				window_vertices, window_normals, window_uvs, window_colors, window_indices,
 				frame_vertices, frame_normals, frame_uvs, frame_indices)
 
 ## Create a single wall segment with window openings (old single-surface version - unused)
@@ -329,7 +338,7 @@ static func _create_wall_segment(p1: Vector2, p2: Vector2, height: float, floor_
 ## Create wall quad with windows cut out (multi-surface version)
 static func _create_wall_with_windows_multi_surface(p1: Vector2, p2: Vector2, floor_bottom: float, floor_top: float, windows: Array, wall_normal: Vector3, wall_length: float,
 	wall_vertices: PackedVector3Array, wall_normals: PackedVector3Array, wall_uvs: PackedVector2Array, wall_indices: PackedInt32Array,
-	window_vertices: PackedVector3Array, window_normals: PackedVector3Array, window_uvs: PackedVector2Array, window_indices: PackedInt32Array,
+	window_vertices: PackedVector3Array, window_normals: PackedVector3Array, window_uvs: PackedVector2Array, window_colors: PackedColorArray, window_indices: PackedInt32Array,
 	frame_vertices: PackedVector3Array, frame_normals: PackedVector3Array, frame_uvs: PackedVector2Array, frame_indices: PackedInt32Array):
 
 	if windows.is_empty():
@@ -379,7 +388,39 @@ static func _create_wall_with_windows_multi_surface(p1: Vector2, p2: Vector2, fl
 
 		# Add window glass (goes to window surface)
 		var window_base = window_vertices.size()
-		_add_window_glass_multi(p1, p2, window_left_t, window_right_t, window_bottom, window_top, wall_normal, window_vertices, window_normals, window_uvs, window_indices, window_base)
+
+		# Generate per-window emission parameters (40% chance of lit window)
+		var window_emission_color = Color.BLACK  # Default: no emission
+		if randf() < 0.4:
+			# Window is lit - emission stored in vertex color RGB
+			# Alpha channel stores emission multiplier with WIDE variation
+			var emission_multiplier = randf_range(0.2, 1.0)
+
+			# Add COLOR VARIATION to simulate different light sources and occupancy
+			var color_roll = randf()
+			var emission_base: Color
+
+			if color_roll < 0.60:
+				# Warm yellow/orange (most common - incandescent/warm LED)
+				emission_base = Color(1.0, randf_range(0.85, 0.95), randf_range(0.6, 0.8))
+			elif color_roll < 0.85:
+				# Neutral white (cool LED, office lighting)
+				emission_base = Color(randf_range(0.95, 1.0), randf_range(0.95, 1.0), randf_range(0.9, 1.0))
+			elif color_roll < 0.95:
+				# Dim warm (candles, dim lamps, cozy)
+				emission_base = Color(1.0, randf_range(0.7, 0.85), randf_range(0.4, 0.6)) * 0.6
+			else:
+				# Blue glow (TV/monitor light)
+				emission_base = Color(randf_range(0.6, 0.8), randf_range(0.7, 0.9), 1.0) * 0.8
+
+			# Apply occupancy variation (curtains, blinds, furniture blocking)
+			# Reduce alpha for "partially blocked" windows
+			if randf() < 0.3:
+				emission_multiplier *= randf_range(0.3, 0.6)  # Curtains/blinds partially closed
+
+			window_emission_color = Color(emission_base.r, emission_base.g, emission_base.b, emission_multiplier)
+
+		_add_window_glass_multi(p1, p2, window_left_t, window_right_t, window_bottom, window_top, wall_normal, window_vertices, window_normals, window_uvs, window_colors, window_indices, window_base, window_emission_color)
 
 		# Add window frame (goes to frame surface)
 		_add_window_frame_multi(p1, p2, window_left_t, window_right_t, window_bottom, window_top, wall_normal, frame_vertices, frame_normals, frame_uvs, frame_indices)
@@ -773,7 +814,7 @@ static func _add_window_reveal(p1: Vector2, p2: Vector2, t1: float, t2: float, y
 	# Total: 8 triangles (2 per reveal quad)
 
 ## Add window glass quad (multi-surface version)
-static func _add_window_glass_multi(p1: Vector2, p2: Vector2, t1: float, t2: float, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, base_index: int, recess_depth: float = 0.15):
+static func _add_window_glass_multi(p1: Vector2, p2: Vector2, t1: float, t2: float, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, colors: PackedColorArray, indices: PackedInt32Array, base_index: int, emission_color: Color = Color.BLACK, recess_depth: float = 0.15):
 	var window_p1 = p1.lerp(p2, t1)
 	var window_p2 = p1.lerp(p2, t2)
 
@@ -792,6 +833,7 @@ static func _add_window_glass_multi(p1: Vector2, p2: Vector2, t1: float, t2: flo
 
 	for i in range(4):
 		normals.append(normal)
+		colors.append(emission_color)  # Vertex color encodes emission
 
 	# Simple UVs for glass
 	uvs.append(Vector2(0, 0))
@@ -810,7 +852,8 @@ static func _add_window_glass_multi(p1: Vector2, p2: Vector2, t1: float, t2: flo
 ## Add window glass quad (old single-surface version - unused)
 static func _add_window_glass(p1: Vector2, p2: Vector2, t1: float, t2: float, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array):
 	var base_index = vertices.size()
-	_add_window_glass_multi(p1, p2, t1, t2, y_bottom, y_top, normal, vertices, normals, uvs, indices, base_index)
+	var colors = PackedColorArray()  # Unused in old version
+	_add_window_glass_multi(p1, p2, t1, t2, y_bottom, y_top, normal, vertices, normals, uvs, colors, indices, base_index, Color.BLACK)
 
 ## Add window frame around window opening (multi-surface version)
 static func _add_window_frame_multi(p1: Vector2, p2: Vector2, t1: float, t2: float, y_bottom: float, y_top: float, normal: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, recess_depth: float = 0.15):
@@ -1552,7 +1595,13 @@ static func _get_window_parameters(building_type: String) -> Dictionary:
 			return {"spacing": 3.0, "width": 1.5, "height": 2.0}
 
 ## Create building material with PBR shading
-static func _create_building_material(osm_data: Dictionary) -> StandardMaterial3D:
+static func _create_building_material(osm_data: Dictionary, material_lib = null) -> StandardMaterial3D:
+	# Use MaterialLibrary if available
+	if material_lib:
+		var material_name = material_lib.get_material_by_osm_tags(osm_data, "wall")
+		return material_lib.get_material(material_name, true)  # Apply variation
+
+	# Fallback: create material manually (old way)
 	var material = StandardMaterial3D.new()
 
 	# Try to get building color from OSM data
@@ -1662,7 +1711,13 @@ static func _parse_osm_color(color_string: String) -> Color:
 		_: return Color.TRANSPARENT
 
 ## Create roof material with PBR shading
-static func _create_roof_material(osm_data: Dictionary) -> StandardMaterial3D:
+static func _create_roof_material(osm_data: Dictionary, material_lib = null) -> StandardMaterial3D:
+	# Use MaterialLibrary if available
+	if material_lib:
+		var roof_material_name = material_lib.get_roof_material(osm_data)
+		return material_lib.get_material(roof_material_name)
+
+	# Fallback: create material manually (old way)
 	var material = StandardMaterial3D.new()
 
 	# Try to get roof color from OSM data
@@ -1720,23 +1775,47 @@ static func _create_roof_material(osm_data: Dictionary) -> StandardMaterial3D:
 	return material
 
 ## Create window glass material with transparency and reflections
-static func _create_window_material() -> StandardMaterial3D:
-	var material = StandardMaterial3D.new()
+static func _create_window_material(osm_data: Dictionary, material_lib = null) -> ShaderMaterial:
+	# Create shader material with per-vertex emission control
+	var shader = load("res://shaders/window_glass.gdshader")
+	var material = ShaderMaterial.new()
+	material.shader = shader
 
-	# Glass-like properties with transparency
-	material.albedo_color = Color.html("#64B5F6")  # Bright blue (80% opacity)
-	material.albedo_color.a = 0.8
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Set base glass appearance (light blue, transparent)
+	material.set_shader_parameter("albedo_color", Color(0.64, 0.71, 0.96, 0.8))
+	material.set_shader_parameter("roughness", 0.1)
+	material.set_shader_parameter("metallic", 0.2)
 
-	# PBR properties for glass-like appearance
-	material.roughness = 0.1  # Very smooth for glass
-	material.metallic = 0.2   # Slight metallic for reflections
+	# Set emission parameters (per-window control via vertex colors)
+	var building_type = osm_data.get("building_type", "residential")
+	var base_emission: Color
+
+	# Emission color varies by building type
+	match building_type:
+		"residential", "house", "apartments":
+			base_emission = Color(1.0, 0.85, 0.6)  # Warm orange
+		"commercial", "office", "retail":
+			base_emission = Color(0.85, 0.95, 1.0)  # Cool blue-white
+		"industrial", "warehouse":
+			base_emission = Color(1.0, 1.0, 0.95)  # Bright neutral
+		_:
+			base_emission = Color(1.0, 0.9, 0.75)  # Warm neutral
+
+	material.set_shader_parameter("base_emission_color", base_emission)
+	material.set_shader_parameter("emission_energy", 0.6)
+
+	# Enable transparency and disable culling (see both sides)
+	material.render_priority = 1  # Render after opaque geometry
 
 	return material
 
 ## Create floor slab material (concrete)
-static func _create_floor_material() -> StandardMaterial3D:
+static func _create_floor_material(material_lib = null) -> StandardMaterial3D:
+	# Use MaterialLibrary if available
+	if material_lib:
+		return material_lib.get_material("concrete_gray")
+
+	# Fallback: create material manually (old way)
 	var material = StandardMaterial3D.new()
 
 	# Concrete grey color
@@ -1749,7 +1828,12 @@ static func _create_floor_material() -> StandardMaterial3D:
 	return material
 
 ## Create window frame material with PBR shading
-static func _create_frame_material() -> StandardMaterial3D:
+static func _create_frame_material(material_lib = null) -> StandardMaterial3D:
+	# Use MaterialLibrary if available
+	if material_lib:
+		return material_lib.get_material("metal_aluminum")
+
+	# Fallback: create material manually (old way)
 	var material = StandardMaterial3D.new()
 
 	# Dark frames for contrast
@@ -1767,10 +1851,15 @@ static func _add_name_label(building: Node3D, building_name: String, height: flo
 	label.name = "BuildingLabel"  # Name it so we can find it later for culling
 	label.text = building_name
 	label.position = Vector3(0, height + base_elevation + 10, 0)  # 10m above building
-	label.font_size = 256  # HUGE for maximum visibility
-	label.outline_size = 24  # Very thick outline
-	label.modulate = Color(1, 0, 0)  # Bright red
-	label.outline_modulate = Color(0, 0, 0)  # Black outline
+	label.font_size = 128  # Smaller, more readable size
+	label.outline_size = 32  # Extra thick outline creates background effect
+	label.modulate = Color(0.9, 0.9, 0.9)  # Light gray, easy to read
+	label.outline_modulate = Color(0, 0, 0, 0.7)  # Semi-transparent black outline (background effect)
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true  # Always visible through objects
+
+	# Add slight transparency to the whole label for subtlety
+	label.alpha_cut = 0  # Ensure alpha is respected
+	label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+
 	building.add_child(label)

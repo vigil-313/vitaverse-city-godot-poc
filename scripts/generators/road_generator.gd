@@ -6,6 +6,9 @@ class_name RoadGenerator
 ## Creates road meshes from OSM path data.
 ## Supports continuous mesh extrusion, bridges, and material variations.
 
+# Preload street lamp generator
+const StreetLampGenerator = preload("res://scripts/generators/street_lamp_generator.gd")
+
 # ========================================================================
 # CONSTANTS
 # ========================================================================
@@ -34,6 +37,10 @@ static func create_road(path: Array, road_data: Dictionary, parent: Node, roads_
 			"path": path,
 			"position": road_node.position
 		})
+
+		# Add street lamps along road (skip motorways/highways)
+		if highway_type not in ["motorway", "trunk"]:
+			StreetLampGenerator.add_lamps_along_road(path, parent, road_data)
 
 	return road_node
 

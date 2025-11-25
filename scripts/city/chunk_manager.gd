@@ -27,7 +27,7 @@ signal chunks_updated(active_count: int, building_count: int, road_count: int)
 @export_group("Chunk Streaming")
 @export_range(100.0, 2000.0, 50.0) var chunk_size: float = 500.0  ## Size of each chunk (meters × meters)
 @export_range(500.0, 5000.0, 100.0) var chunk_load_radius: float = 1000.0  ## Load chunks within this distance
-@export_range(500.0, 6000.0, 100.0) var chunk_unload_radius: float = 1500.0  ## Unload chunks beyond this distance
+@export_range(500.0, 6000.0, 100.0) var chunk_unload_radius: float = 2000.0  ## Unload chunks beyond this distance (increased hysteresis)
 @export_range(0.1, 2.0, 0.1) var chunk_update_interval: float = 1.0  ## How often to check for chunk updates (seconds)
 @export var max_chunks_per_frame: int = 2  ## Maximum chunks to load/unload per update cycle
 
@@ -78,7 +78,7 @@ func _init(p_feature_factory, p_scene_root: Node):
 	const LoadingQueue = preload("res://scripts/city/loading_queue.gd")
 	loading_queue = LoadingQueue.new()
 	loading_queue.frame_budget_ms = 5.0
-	loading_queue.enable_logging = true
+	loading_queue.enable_logging = false  # Disabled - we'll track at chunk level instead
 
 	# Connect signals
 	loading_queue.chunk_fully_loaded.connect(_on_chunk_fully_loaded)
@@ -137,8 +137,16 @@ func update(delta: float, camera_pos: Vector3):
 func load_chunk(chunk_key: Vector2i):
 	# Check if already loaded or loading
 	var state = chunk_states.get(chunk_key, "unloaded")
-	if state == "loaded" or state == "loading":
+	if state == "loaded":
+		return  # Already loaded, silently skip
+
+	if state == "loading":
+		print("[ChunkManager] ⚠️  DUPLICATE load_chunk(", chunk_key, ") - already loading! State: ", state, ", in active_chunks: ", active_chunks.has(chunk_key))
+		# Print stack trace to see where this is being called from
+		print("   Call stack: ", get_stack())
 		return
+
+	print("[ChunkManager] ✅ Loading chunk ", chunk_key, " (state: ", state, ", active: ", active_chunks.has(chunk_key), ")")
 
 	# Create chunk container immediately (lightweight)
 	var chunk_node = Node3D.new()
@@ -188,8 +196,26 @@ func unload_chunk(chunk_key: Vector2i):
 	if not active_chunks.has(chunk_key):
 		return  # Not loaded
 
+	# Don't unload chunks that are still loading WITH PENDING ITEMS (let them finish first)
+	var state = chunk_states.get(chunk_key, "unloaded")
+	var pending_items = loading_queue.get_pending_items_for_chunk(chunk_key)
+
+	if state == "loading" and pending_items > 0:
+		print("[ChunkManager] ⏸️  Skipping unload of chunk ", chunk_key, " - still loading (", pending_items, " items pending)")
+		return
+
+	# If state is "loading" but no pending items, force to "loaded"
+	if state == "loading" and pending_items == 0:
+		print("[ChunkManager] 🔧 Force-completing chunk ", chunk_key, " (loading finished but state stuck)")
+		chunk_states[chunk_key] = "loaded"
+		# Don't unload yet - let it stay loaded
+		return
+
+	print("[ChunkManager] ❌ Unloading chunk ", chunk_key)
+
 	# Cancel any pending work for this chunk
 	if loading_queue.is_chunk_loading(chunk_key):
+		print("[ChunkManager]    Cancelling pending work items")
 		loading_queue.cancel_chunk(chunk_key)
 
 	var chunk_node = active_chunks[chunk_key]
@@ -246,8 +272,8 @@ func unload_chunk(chunk_key: Vector2i):
 	chunk_node.queue_free()
 	active_chunks.erase(chunk_key)
 
-	# Update state
-	chunk_states.erase(chunk_key)
+	# Update state (keep state as "unloaded" instead of erasing to prevent immediate re-queueing)
+	chunk_states[chunk_key] = "unloaded"
 
 	# Emit signal
 	chunk_unloaded.emit(chunk_key)
@@ -258,13 +284,16 @@ func unload_chunk(chunk_key: Vector2i):
 
 ## Update chunk streaming based on camera position
 func _update_streaming(camera_pos_2d: Vector2):
+	print("[ChunkManager] 🔄 _update_streaming called at ", Time.get_ticks_msec())
+
 	# Get chunks that should be loaded
 	var chunks_to_load = get_chunks_in_radius(camera_pos_2d, chunk_load_radius)
 
 	# Filter to only new chunks
 	var new_chunks = []
 	for chunk_key in chunks_to_load:
-		if not active_chunks.has(chunk_key):
+		var state = chunk_states.get(chunk_key, "unloaded")
+		if state == "unloaded":
 			new_chunks.append(chunk_key)
 
 	# Sort by distance (load closest first)
@@ -279,6 +308,9 @@ func _update_streaming(camera_pos_2d: Vector2):
 	for chunk_key in new_chunks:
 		if chunks_loaded >= max_chunks_per_frame:
 			break
+		var chunk_center = Vector2(chunk_key.x * chunk_size + chunk_size/2, chunk_key.y * chunk_size + chunk_size/2)
+		var distance = camera_pos_2d.distance_to(chunk_center)
+		print("[ChunkManager] 📏 Loading chunk ", chunk_key, " at ", "%.0f" % distance, "m (load radius: ", chunk_load_radius, "m)")
 		load_chunk(chunk_key)
 		chunks_loaded += 1
 
@@ -289,6 +321,7 @@ func _update_streaming(camera_pos_2d: Vector2):
 		var distance = camera_pos_2d.distance_to(chunk_center)
 
 		if distance > chunk_unload_radius:
+			print("[ChunkManager] 📏 Chunk ", chunk_key, " is ", "%.0f" % distance, "m away (unload radius: ", chunk_unload_radius, "m)")
 			chunks_to_unload.append(chunk_key)
 
 	# Unload gradually (max_chunks_per_frame at a time)
@@ -441,10 +474,14 @@ func _queue_distant_water(camera_pos: Vector2, extended_radius: float):
 				# Check if this specific water body is already rendered
 				var water_id = "DistantWater_" + str(chunk_key.x) + "_" + str(chunk_key.y) + "_" + water_name
 				if not scene_root.has_node(NodePath(water_id)):
-					# Queue distant water work item
+					# Queue distant water work item with special chunk_key to avoid interfering
+					# with regular chunk loading tracking. Use large negative values that won't
+					# collide with real chunk coordinates.
+					var distant_water_chunk_key = Vector2i(-10000 - water_bodies_loaded, -10000)
 					loading_queue.queue_work({
 						"type": "distant_water",
-						"chunk_key": chunk_key,
+						"chunk_key": distant_water_chunk_key,
+						"original_chunk_key": chunk_key,  # Store original for reference
 						"id": water_id,
 						"data": water_data,
 						"scene_root": scene_root,

@@ -27,7 +27,7 @@ signal queue_progress(items_remaining: int, items_total: int)
 # ========================================================================
 
 @export var frame_budget_ms: float = 5.0  ## Max time to spend on loading per frame
-@export var enable_logging: bool = true   ## Enable detailed logging
+@export var enable_logging: bool = false  ## Enable detailed logging (DISABLED to reduce spam)
 
 # ========================================================================
 # STATE
@@ -69,6 +69,10 @@ func queue_work(work_item: Dictionary) -> void:
 	if not chunks_loading.has(chunk_key):
 		chunks_loading[chunk_key] = {"total": 0, "completed": 0}
 	chunks_loading[chunk_key].total += 1
+
+	# Only log if queue is growing dangerously large (potential infinite loop)
+	if work_queue.size() > 1000 and work_queue.size() % 100 == 0:
+		print("[LoadingQueue] ⚠️  QUEUE GROWING! ", work_queue.size(), " items (", work_item.type, " for chunk ", chunk_key, ")")
 
 	if enable_logging:
 		print("[LoadingQueue] Queued ", work_item.type, " for chunk ", chunk_key, " (queue size: ", work_queue.size(), ")")
@@ -116,10 +120,10 @@ func process(delta: float) -> void:
 		# Emit progress signal
 		queue_progress.emit(work_queue.size(), total_items_queued)
 
-	# Log frame summary
-	if enable_logging and items_this_frame > 0:
-		var frame_time_ms = time_spent_microsec / 1000.0
-		print("[LoadingQueue] Processed ", items_this_frame, " items in ", "%.1f" % frame_time_ms, "ms / ", frame_budget_ms, "ms budget (", work_queue.size(), " remaining)")
+	# Disabled - too spammy, use QUEUE GROWING warnings instead
+	# if items_this_frame > 0 and work_queue.size() > 1000:
+	#	var frame_time_ms = time_spent_microsec / 1000.0
+	#	print("[LoadingQueue] Processed ", items_this_frame, " items in ", "%.1f" % frame_time_ms, "ms / ", frame_budget_ms, "ms budget (", work_queue.size(), " remaining)")
 
 ## Clear all pending work
 func clear_queue() -> void:
@@ -144,6 +148,14 @@ func get_stats() -> Dictionary:
 ## Check if a chunk is currently being loaded
 func is_chunk_loading(chunk_key: Vector2i) -> bool:
 	return chunks_loading.has(chunk_key)
+
+## Count pending work items for a specific chunk
+func get_pending_items_for_chunk(chunk_key: Vector2i) -> int:
+	var count = 0
+	for item in work_queue:
+		if item.chunk_key == chunk_key:
+			count += 1
+	return count
 
 ## Cancel all work for a specific chunk
 func cancel_chunk(chunk_key: Vector2i) -> void:
@@ -297,10 +309,15 @@ func _execute_water(work_item: Dictionary) -> bool:
 func _execute_distant_water(work_item: Dictionary) -> bool:
 	var water_data = work_item.get("data")
 	var scene_root = work_item.get("scene_root")
+	var water_id = work_item.get("id", "")
 
 	if not water_data or not scene_root:
 		push_warning("[LoadingQueue] Invalid distant water work item")
 		return false
+
+	# Check if already exists (prevent duplicates)
+	if scene_root.has_node(NodePath(water_id)):
+		return true  # Already loaded, skip
 
 	# Import generator
 	const WaterGenerator = preload("res://scripts/generators/water_generator.gd")
@@ -311,6 +328,10 @@ func _execute_distant_water(work_item: Dictionary) -> bool:
 		water_data,
 		scene_root
 	)
+
+	# Set the correct name for duplicate detection
+	if water_node and water_id:
+		water_node.name = water_id
 
 	work_item["created_node"] = water_node
 
@@ -328,9 +349,8 @@ func _update_chunk_progress(chunk_key: Vector2i) -> void:
 	if chunk_info.completed >= chunk_info.total:
 		chunk_fully_loaded.emit(chunk_key)
 		chunks_loading.erase(chunk_key)
-
-		if enable_logging:
-			print("[LoadingQueue] ✅ Chunk ", chunk_key, " fully loaded! (", chunk_info.total, " items)")
+		# Always log chunk completion (important milestone)
+		print("[LoadingQueue] ✅ Chunk ", chunk_key, " fully loaded! (", chunk_info.total, " items)")
 
 ## Finalize any chunks that finished loading
 func _finalize_loaded_chunks() -> void:
