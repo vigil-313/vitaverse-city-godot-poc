@@ -20,7 +20,7 @@ static func create(osm_data: Dictionary, material_lib = null) -> ShaderMaterial:
 	var base_emission = _get_type_based_emission(building_type)
 
 	material.set_shader_parameter("base_emission_color", base_emission)
-	material.set_shader_parameter("emission_energy", 0.6)
+	material.set_shader_parameter("emission_energy", 1.5)  # Increased from 0.6 for brighter emission
 
 	# Enable transparency and render after opaque geometry
 	material.render_priority = 1

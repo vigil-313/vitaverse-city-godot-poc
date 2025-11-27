@@ -16,6 +16,9 @@ const WallGenerator = preload("res://scripts/generators/building/walls/wall_gene
 # Roof systems
 const RoofGenerator = preload("res://scripts/generators/building/roofs/roof_generator.gd")
 
+# Interior systems
+const CeilingLightGenerator = preload("res://scripts/generators/building/interior/ceiling_lights/ceiling_light_generator.gd")
+
 # Architectural details
 const FoundationGenerator = preload("res://scripts/generators/building/walls/details/foundation_generator.gd")
 const CorniceGenerator = preload("res://scripts/generators/building/walls/details/cornice_generator.gd")
@@ -79,8 +82,8 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 	var context = BuildingContext.new()
 	context.initialize(osm_data, detailed, material_lib)
 
-	# Generate walls with windows
-	WallGenerator.generate_walls(context, surfaces)
+	# Generate walls with windows (returns floor emissions for ceiling lights)
+	var floor_emissions = WallGenerator.generate_walls(context, surfaces)
 
 	# Generate architectural details (if detailed mode)
 	if detailed:
@@ -89,6 +92,12 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 			CorniceGenerator.generate(footprint, center, height, surfaces["wall"])
 			FloorLedgeGenerator.generate(footprint, center, height / float(levels), levels, surfaces["wall"])
 			FloorSlabGenerator.generate(footprint, center, height / float(levels), levels, surfaces["wall"])
+
+	# Generate interior ceiling lights (visible through windows)
+	# Returns Array of OmniLight3D (one per lit floor, 90% of buildings)
+	var interior_lights = []
+	if detailed:
+		interior_lights = CeilingLightGenerator.generate_ceiling_lights(context, surfaces["glass"], floor_emissions)
 
 	# Generate roof
 	RoofGenerator.generate_roof(context, surfaces)
@@ -121,5 +130,10 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 
 	# Apply materials to all surfaces
 	MaterialCoordinator.apply_materials(mesh_instance, surface_indices, osm_data, material_lib)
+
+	# Add interior lights (one per lit floor)
+	for light in interior_lights:
+		if light != null:
+			mesh_instance.add_child(light)
 
 	return mesh_instance

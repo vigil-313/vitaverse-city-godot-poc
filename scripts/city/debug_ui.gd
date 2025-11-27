@@ -42,14 +42,18 @@ var chunk_manager = null  # ChunkManager instance
 ## Visual manager reference for visual controls
 var visual_manager = null  # VisualManager instance
 
+## Lighting LOD manager reference for stats
+var lighting_lod_manager = null  # LightingLODManager instance
+
 # ========================================================================
 # INITIALIZATION
 # ========================================================================
 
-func setup(parent: Node3D, p_chunk_manager, p_visual_manager = null):
+func setup(parent: Node3D, p_chunk_manager, p_visual_manager = null, p_lighting_lod_manager = null):
 	scene_root = parent
 	chunk_manager = p_chunk_manager
 	visual_manager = p_visual_manager
+	lighting_lod_manager = p_lighting_lod_manager
 
 	_create_hud(parent)
 	_create_debug_panel(parent)
@@ -115,6 +119,18 @@ func update_hud(camera_pos: Vector3, heading_info: Dictionary, current_speed: fl
 	]
 	hud_text += "FPS: %d\n" % Engine.get_frames_per_second()
 
+	# Light LOD stats
+	if lighting_lod_manager:
+		var lod_stats = lighting_lod_manager.get_stats()
+		hud_text += "Lights: %d/%d active (%d shadowed) | NEAR:%d MID:%d FAR:%d\n" % [
+			lod_stats.get("active_count", 0),
+			lod_stats.get("total_registered", 0),
+			lod_stats.get("shadowed_count", 0),
+			lod_stats.get("near_count", 0),
+			lod_stats.get("mid_count", 0),
+			lod_stats.get("far_count", 0)
+		]
+
 	# Visual system info
 	if visual_manager:
 		hud_text += "\n"
@@ -147,117 +163,261 @@ func _create_debug_panel(parent: Node3D):
 	parent.add_child(canvas)
 
 	debug_panel = PanelContainer.new()
-	debug_panel.position = Vector2(20, 200)
+	debug_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	debug_panel.position = Vector2(-10, 10)
+	debug_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	debug_panel.visible = false
 	canvas.add_child(debug_panel)
 
+	# Style the panel
+	var style_box = StyleBoxFlat.new()
+	style_box.bg_color = Color(0.1, 0.1, 0.1, 0.85)
+	style_box.border_color = Color(0.3, 0.3, 0.3, 0.9)
+	style_box.border_width_left = 2
+	style_box.border_width_right = 2
+	style_box.border_width_top = 2
+	style_box.border_width_bottom = 2
+	style_box.corner_radius_top_left = 6
+	style_box.corner_radius_top_right = 6
+	style_box.corner_radius_bottom_left = 6
+	style_box.corner_radius_bottom_right = 6
+	style_box.content_margin_left = 10
+	style_box.content_margin_right = 10
+	style_box.content_margin_top = 8
+	style_box.content_margin_bottom = 8
+	debug_panel.add_theme_stylebox_override("panel", style_box)
+
 	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
 	debug_panel.add_child(vbox)
 
 	# Title
 	var title = Label.new()
-	title.text = "DEBUG PANEL (F3 to toggle)"
-	title.add_theme_font_size_override("font_size", 16)
-	title.add_theme_color_override("font_color", Color(1, 1, 0))
+	title.text = "DEBUG (F3)"
+	title.add_theme_font_size_override("font_size", 11)
+	title.add_theme_color_override("font_color", Color(1, 0.9, 0.3))
 	vbox.add_child(title)
 
+	# Helper to create collapsible section
+	var create_collapsible_section = func(section_title: String, container: VBoxContainer):
+		var section_vbox = VBoxContainer.new()
+		section_vbox.add_theme_constant_override("separation", 2)
+		container.add_child(section_vbox)
+
+		var header_hbox = HBoxContainer.new()
+		section_vbox.add_child(header_hbox)
+
+		var collapse_btn = Button.new()
+		collapse_btn.text = "▼"
+		collapse_btn.custom_minimum_size = Vector2(18, 18)
+		collapse_btn.add_theme_font_size_override("font_size", 8)
+		header_hbox.add_child(collapse_btn)
+
+		var section_label = Label.new()
+		section_label.text = section_title
+		section_label.add_theme_font_size_override("font_size", 9)
+		section_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+		header_hbox.add_child(section_label)
+
+		var content_vbox = VBoxContainer.new()
+		content_vbox.add_theme_constant_override("separation", 2)
+		content_vbox.name = section_title.replace(" ", "") + "Content"
+		section_vbox.add_child(content_vbox)
+
+		collapse_btn.pressed.connect(func():
+			content_vbox.visible = !content_vbox.visible
+			collapse_btn.text = "▶" if !content_vbox.visible else "▼"
+		)
+
+		return content_vbox
+
 	# === MOVEMENT SPEED SECTION ===
-	var speed_header = Label.new()
-	speed_header.text = "--- Movement Speed ---"
-	speed_header.add_theme_font_size_override("font_size", 14)
-	speed_header.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	vbox.add_child(speed_header)
+	var speed_content = create_collapsible_section.call("Movement Speed", vbox)
+	speed_content.visible = false  # Start collapsed
 
 	var speed_hbox = HBoxContainer.new()
-	vbox.add_child(speed_hbox)
+	speed_content.add_child(speed_hbox)
 
 	var speed_label = Label.new()
-	speed_label.text = "Speed Multiplier:"
-	speed_label.custom_minimum_size = Vector2(120, 0)
+	speed_label.text = "Multiplier:"
+	speed_label.custom_minimum_size = Vector2(60, 0)
+	speed_label.add_theme_font_size_override("font_size", 8)
 	speed_hbox.add_child(speed_label)
 
 	var speed_input = LineEdit.new()
 	speed_input.text = "1.0"
-	speed_input.custom_minimum_size = Vector2(80, 0)
+	speed_input.custom_minimum_size = Vector2(40, 16)
 	speed_input.name = "SpeedInput"
+	speed_input.add_theme_font_size_override("font_size", 8)
 	speed_hbox.add_child(speed_input)
 
 	var speeds_label = Label.new()
-	speeds_label.text = "Normal: 20 m/s | Fast: 100 m/s"
+	speeds_label.text = "Normal: 20 | Fast: 100"
 	speeds_label.name = "SpeedsLabel"
-	speeds_label.add_theme_font_size_override("font_size", 12)
-	speeds_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	vbox.add_child(speeds_label)
+	speeds_label.add_theme_font_size_override("font_size", 7)
+	speeds_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	speed_content.add_child(speeds_label)
 
 	# === CHUNK STREAMING SECTION ===
-	var chunk_header = Label.new()
-	chunk_header.text = "--- Chunk Streaming ---"
-	chunk_header.add_theme_font_size_override("font_size", 14)
-	chunk_header.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	vbox.add_child(chunk_header)
+	var chunk_content = create_collapsible_section.call("Chunk Streaming", vbox)
+	chunk_content.visible = false  # Start collapsed
 
 	# Load Radius
 	var load_hbox = HBoxContainer.new()
-	vbox.add_child(load_hbox)
+	chunk_content.add_child(load_hbox)
 
 	var load_label = Label.new()
-	load_label.text = "Load Radius (m):"
-	load_label.custom_minimum_size = Vector2(120, 0)
+	load_label.text = "Load (m):"
+	load_label.custom_minimum_size = Vector2(55, 0)
+	load_label.add_theme_font_size_override("font_size", 8)
 	load_hbox.add_child(load_label)
 
 	var load_input = LineEdit.new()
 	load_input.text = "1000"
-	load_input.custom_minimum_size = Vector2(80, 0)
+	load_input.custom_minimum_size = Vector2(45, 16)
 	load_input.name = "LoadInput"
+	load_input.add_theme_font_size_override("font_size", 8)
 	load_hbox.add_child(load_input)
 
 	# Unload Radius
 	var unload_hbox = HBoxContainer.new()
-	vbox.add_child(unload_hbox)
+	chunk_content.add_child(unload_hbox)
 
 	var unload_label = Label.new()
-	unload_label.text = "Unload Radius (m):"
-	unload_label.custom_minimum_size = Vector2(120, 0)
+	unload_label.text = "Unload (m):"
+	unload_label.custom_minimum_size = Vector2(55, 0)
+	unload_label.add_theme_font_size_override("font_size", 8)
 	unload_hbox.add_child(unload_label)
 
 	var unload_input = LineEdit.new()
 	unload_input.text = "1500"
-	unload_input.custom_minimum_size = Vector2(80, 0)
+	unload_input.custom_minimum_size = Vector2(45, 16)
 	unload_input.name = "UnloadInput"
+	unload_input.add_theme_font_size_override("font_size", 8)
 	unload_hbox.add_child(unload_input)
 
-	# Chunk Size (Read-only)
-	var size_hbox = HBoxContainer.new()
-	vbox.add_child(size_hbox)
+	# === INTERIOR LIGHTING SECTION ===
+	var lighting_content = create_collapsible_section.call("Interior Lighting", vbox)
 
-	var size_label = Label.new()
-	size_label.text = "Chunk Size: 500m (fixed)"
-	size_label.custom_minimum_size = Vector2(250, 0)
-	size_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	size_hbox.add_child(size_label)
+	# Helper for slider + input pairs
+	var create_slider_input = func(parent: VBoxContainer, label_text: String, min_val: float, max_val: float, default_val: float, input_name: String, slider_name: String):
+		var row_vbox = VBoxContainer.new()
+		row_vbox.add_theme_constant_override("separation", 1)
+		parent.add_child(row_vbox)
+
+		var label_hbox = HBoxContainer.new()
+		row_vbox.add_child(label_hbox)
+
+		var label = Label.new()
+		label.text = label_text
+		label.add_theme_font_size_override("font_size", 7)
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label_hbox.add_child(label)
+
+		var input = LineEdit.new()
+		input.text = str(default_val)
+		input.custom_minimum_size = Vector2(35, 14)
+		input.name = input_name
+		input.add_theme_font_size_override("font_size", 7)
+		label_hbox.add_child(input)
+
+		var slider = HSlider.new()
+		slider.min_value = min_val
+		slider.max_value = max_val
+		slider.value = default_val
+		slider.step = (max_val - min_val) / 100.0
+		slider.custom_minimum_size = Vector2(0, 12)
+		slider.name = slider_name
+		row_vbox.add_child(slider)
+
+		# Sync slider and input
+		slider.value_changed.connect(func(val): input.text = "%.2f" % val)
+		input.text_changed.connect(func(text):
+			var val = text.to_float()
+			if val >= min_val and val <= max_val:
+				slider.value = val
+		)
+
+	# Light Color
+	create_slider_input.call(lighting_content, "Color R", 0.0, 1.0, 1.0, "ColorR", "ColorRSlider")
+	create_slider_input.call(lighting_content, "Color G", 0.0, 1.0, 0.95, "ColorG", "ColorGSlider")
+	create_slider_input.call(lighting_content, "Color B", 0.0, 1.0, 0.85, "ColorB", "ColorBSlider")
+
+	# Light Energy & Range
+	create_slider_input.call(lighting_content, "Energy", 0.1, 50.0, 10.0, "LightEnergy", "EnergySlider")
+	create_slider_input.call(lighting_content, "Range (m)", 5.0, 100.0, 40.0, "LightRange", "RangeSlider")
+
+	# Shadows checkbox
+	var shadow_hbox = HBoxContainer.new()
+	lighting_content.add_child(shadow_hbox)
+	var shadow_check = CheckBox.new()
+	shadow_check.button_pressed = true
+	shadow_check.name = "ShadowsEnabled"
+	shadow_check.custom_minimum_size = Vector2(14, 14)
+	shadow_hbox.add_child(shadow_check)
+	var shadow_label = Label.new()
+	shadow_label.text = "Shadows"
+	shadow_label.add_theme_font_size_override("font_size", 7)
+	shadow_hbox.add_child(shadow_label)
+
+	# Shadow parameters
+	create_slider_input.call(lighting_content, "Shadow Opacity", 0.0, 1.0, 1.0, "ShadowOpacity", "ShadowOpacitySlider")
+	create_slider_input.call(lighting_content, "Shadow Bias", 0.0, 2.0, 0.1, "ShadowBias", "ShadowBiasSlider")
+	create_slider_input.call(lighting_content, "Shadow Normal", 0.0, 10.0, 2.0, "ShadowNormalBias", "ShadowNormalSlider")
+	create_slider_input.call(lighting_content, "Shadow Blur", 0.0, 5.0, 1.5, "ShadowBlur", "ShadowBlurSlider")
 
 	# Buttons
-	var apply_button = Button.new()
-	apply_button.text = "Apply Changes"
-	apply_button.pressed.connect(_on_apply_pressed)
-	vbox.add_child(apply_button)
+	var btn_hbox = HBoxContainer.new()
+	btn_hbox.add_theme_constant_override("separation", 3)
+	lighting_content.add_child(btn_hbox)
 
-	var reset_button = Button.new()
-	reset_button.text = "Reset to Defaults"
-	reset_button.pressed.connect(_on_reset_pressed)
-	vbox.add_child(reset_button)
+	var apply_btn = Button.new()
+	apply_btn.text = "Apply"
+	apply_btn.add_theme_font_size_override("font_size", 7)
+	apply_btn.custom_minimum_size = Vector2(0, 18)
+	apply_btn.pressed.connect(_on_apply_lighting_pressed)
+	btn_hbox.add_child(apply_btn)
+
+	var save_btn = Button.new()
+	save_btn.text = "Save"
+	save_btn.add_theme_font_size_override("font_size", 7)
+	save_btn.custom_minimum_size = Vector2(0, 18)
+	save_btn.pressed.connect(_on_save_lighting_config)
+	btn_hbox.add_child(save_btn)
+
+	# Add apply/reset buttons for speed/chunk settings
+	var settings_btn_hbox = HBoxContainer.new()
+	settings_btn_hbox.add_theme_constant_override("separation", 3)
+	vbox.add_child(settings_btn_hbox)
+
+	var apply_settings_btn = Button.new()
+	apply_settings_btn.text = "Apply Settings"
+	apply_settings_btn.add_theme_font_size_override("font_size", 7)
+	apply_settings_btn.custom_minimum_size = Vector2(0, 18)
+	apply_settings_btn.pressed.connect(_on_apply_pressed)
+	settings_btn_hbox.add_child(apply_settings_btn)
+
+	var reset_btn = Button.new()
+	reset_btn.text = "Reset"
+	reset_btn.add_theme_font_size_override("font_size", 7)
+	reset_btn.custom_minimum_size = Vector2(0, 18)
+	reset_btn.pressed.connect(_on_reset_pressed)
+	settings_btn_hbox.add_child(reset_btn)
 
 	# Status
 	var status_label = Label.new()
 	status_label.text = ""
 	status_label.name = "StatusLabel"
-	status_label.add_theme_color_override("font_color", Color(0, 1, 0))
+	status_label.add_theme_font_size_override("font_size", 7)
+	status_label.add_theme_color_override("font_color", Color(0.3, 1, 0.3))
 	vbox.add_child(status_label)
 
 	# Stats
 	var stats_label = Label.new()
-	stats_label.text = "Active Chunks: 0"
+	stats_label.text = ""
 	stats_label.name = "StatsLabel"
+	stats_label.add_theme_font_size_override("font_size", 7)
+	stats_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	vbox.add_child(stats_label)
 
 func _on_apply_pressed():
@@ -274,6 +434,88 @@ func _on_apply_pressed():
 
 func _on_reset_pressed():
 	settings_reset_requested.emit()
+
+func _on_apply_lighting_pressed():
+	# Get all inputs
+	var color_r = (debug_panel.find_child("ColorR", true, false) as LineEdit).text.to_float()
+	var color_g = (debug_panel.find_child("ColorG", true, false) as LineEdit).text.to_float()
+	var color_b = (debug_panel.find_child("ColorB", true, false) as LineEdit).text.to_float()
+	var energy = (debug_panel.find_child("LightEnergy", true, false) as LineEdit).text.to_float()
+	var range_val = (debug_panel.find_child("LightRange", true, false) as LineEdit).text.to_float()
+	var shadows_enabled = (debug_panel.find_child("ShadowsEnabled", true, false) as CheckBox).button_pressed
+	var shadow_opacity = (debug_panel.find_child("ShadowOpacity", true, false) as LineEdit).text.to_float()
+	var shadow_bias = (debug_panel.find_child("ShadowBias", true, false) as LineEdit).text.to_float()
+	var shadow_normal_bias = (debug_panel.find_child("ShadowNormalBias", true, false) as LineEdit).text.to_float()
+	var shadow_blur = (debug_panel.find_child("ShadowBlur", true, false) as LineEdit).text.to_float()
+
+	var light_color = Color(color_r, color_g, color_b)
+
+	# Find all LODLightProxy instances (interior lights)
+	var proxies = _find_all_light_proxies(scene_root)
+	print("💡 Updating ", proxies.size(), " interior light proxies...")
+
+	for proxy in proxies:
+		# Update proxy base parameters
+		proxy.base_color = light_color
+		proxy.base_energy = energy
+		proxy.base_range = range_val
+
+		# Update the actual OmniLight3D if it exists (NEAR/MID tier)
+		if proxy.omni_light:
+			proxy.omni_light.light_color = light_color
+			proxy.omni_light.omni_range = range_val
+			proxy.omni_light.shadow_enabled = shadows_enabled and (proxy.current_tier == 0)
+			proxy.omni_light.shadow_opacity = shadow_opacity
+			proxy.omni_light.shadow_bias = shadow_bias
+			proxy.omni_light.shadow_normal_bias = shadow_normal_bias
+			proxy.omni_light.shadow_blur = shadow_blur
+			# Recalculate energy with time fade
+			var tier_mult = 1.0 if proxy.current_tier == 0 else 0.85
+			proxy.omni_light.light_energy = energy * tier_mult * proxy.time_fade
+
+	show_status("✓ Updated %d lights" % proxies.size())
+
+func _on_save_lighting_config():
+	# Get all current values
+	var color_r = (debug_panel.find_child("ColorR", true, false) as LineEdit).text
+	var color_g = (debug_panel.find_child("ColorG", true, false) as LineEdit).text
+	var color_b = (debug_panel.find_child("ColorB", true, false) as LineEdit).text
+	var energy = (debug_panel.find_child("LightEnergy", true, false) as LineEdit).text
+	var range_val = (debug_panel.find_child("LightRange", true, false) as LineEdit).text
+	var shadows_enabled = (debug_panel.find_child("ShadowsEnabled", true, false) as CheckBox).button_pressed
+	var shadow_opacity = (debug_panel.find_child("ShadowOpacity", true, false) as LineEdit).text
+	var shadow_bias = (debug_panel.find_child("ShadowBias", true, false) as LineEdit).text
+	var shadow_normal_bias = (debug_panel.find_child("ShadowNormalBias", true, false) as LineEdit).text
+	var shadow_blur = (debug_panel.find_child("ShadowBlur", true, false) as LineEdit).text
+
+	# Print config in copy-pasteable format
+	print("\n" + "=".repeat(60))
+	print("INTERIOR LIGHTING CONFIG - Copy to ceiling_light_generator.gd")
+	print("=".repeat(60))
+	print("light.light_color = Color(%s, %s, %s)" % [color_r, color_g, color_b])
+	print("light.light_energy = %s" % energy)
+	print("light.omni_range = %s" % range_val)
+	print("light.shadow_enabled = %s" % str(shadows_enabled).to_lower())
+	print("light.shadow_opacity = %s" % shadow_opacity)
+	print("light.shadow_bias = %s" % shadow_bias)
+	print("light.shadow_normal_bias = %s" % shadow_normal_bias)
+	print("light.shadow_blur = %s" % shadow_blur)
+	print("=".repeat(60) + "\n")
+
+	show_status("✓ Config saved to console")
+
+func _find_all_light_proxies(node: Node) -> Array:
+	var proxies = []
+
+	# Check if this node is a LODLightProxy (by name pattern)
+	if node.name.begins_with("InteriorLight_"):
+		proxies.append(node)
+
+	# Recursively search children
+	for child in node.get_children():
+		proxies.append_array(_find_all_light_proxies(child))
+
+	return proxies
 
 func update_speeds_display(normal_speed: float, fast_speed: float):
 	if debug_panel:

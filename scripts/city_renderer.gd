@@ -35,6 +35,7 @@ const MaterialLibrary = preload("res://scripts/visual/material_library.gd")
 const LightingController = preload("res://scripts/visual/lighting_controller.gd")
 const PostProcessingStack = preload("res://scripts/visual/post_processing_stack.gd")
 const EnvironmentPresets = preload("res://scripts/visual/environment_presets.gd")
+const LightingLODManager = preload("res://scripts/visual/lighting_lod_manager.gd")
 
 # ========================================================================
 # EXPORTS
@@ -60,6 +61,7 @@ var material_library: MaterialLibrary
 var lighting_controller: LightingController
 var post_processing_stack: PostProcessingStack
 var environment_presets: EnvironmentPresets
+var lighting_lod_manager: LightingLODManager
 
 # Scene references for visual systems
 var directional_light: DirectionalLight3D
@@ -136,6 +138,10 @@ func _process(delta: float):
 	if visual_manager:
 		visual_manager._process(delta)
 
+	# Update lighting LOD (manages light count based on camera distance)
+	if lighting_lod_manager and camera_controller and camera_controller.camera:
+		lighting_lod_manager.update_lod(camera_controller.camera.global_position, delta)
+
 	# Update HUD
 	if debug_ui and camera_controller and camera_controller.camera:
 		var heading_info = camera_controller.get_heading_info()
@@ -198,10 +204,10 @@ func _initialize_components(osm_data: OSMDataComplete):
 	if post_processing_stack and camera_controller.camera:
 		post_processing_stack.camera = camera_controller.camera
 
-	# 4. Create DebugUI with visual manager
+	# 4. Create DebugUI with visual manager and LOD manager
 	debug_ui = DebugUI.new()
 	add_child(debug_ui)
-	debug_ui.setup(self, chunk_manager, visual_manager)
+	debug_ui.setup(self, chunk_manager, visual_manager, lighting_lod_manager)
 
 	# Connect debug UI signals
 	debug_ui.settings_apply_requested.connect(_on_debug_settings_apply)
@@ -257,10 +263,19 @@ func _initialize_visual_systems():
 		environment_presets
 	)
 
+	# 6. Create LightingLODManager for dynamic light LOD
+	lighting_lod_manager = LightingLODManager.new()
+	add_child(lighting_lod_manager)
+	lighting_lod_manager.lighting_controller = lighting_controller
+
+	# Connect time-of-day changes to LOD manager for building light fading
+	lighting_controller.time_of_day_changed.connect(lighting_lod_manager.on_time_changed)
+
 	# Apply default preset
 	visual_manager.apply_preset("default")
 
 	print("   ✅ Visual systems initialized with 'default' preset")
+	print("   ✅ LightingLODManager initialized (32 shadow / 400 active, 1000m MID range)")
 	print("")
 
 # ========================================================================

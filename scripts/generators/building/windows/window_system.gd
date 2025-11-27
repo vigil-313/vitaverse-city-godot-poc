@@ -10,6 +10,7 @@ const FrameGenerator = preload("res://scripts/generators/building/windows/compon
 const EmissionController = preload("res://scripts/generators/building/windows/features/emission_controller.gd")
 
 ## Add a complete window (reveal + glass + frame)
+## If emission_color is not provided, generates one automatically
 static func add_window(
 	p1: Vector2, p2: Vector2,
 	window_left_t: float, window_right_t: float,
@@ -17,8 +18,9 @@ static func add_window(
 	wall_normal: Vector3,
 	wall_surface,
 	glass_surface,
-	frame_surface
-) -> void:
+	frame_surface,
+	emission_color: Color = Color.BLACK  # Optional pre-generated emission
+) -> Color:
 	# Add window reveal (goes to wall surface - shows wall thickness)
 	RevealGenerator.add_window_reveal(
 		p1, p2,
@@ -31,8 +33,9 @@ static func add_window(
 		wall_surface.indices
 	)
 
-	# Generate emission color
-	var emission_color = EmissionController.generate_window_emission()
+	# Generate emission color if not provided
+	if emission_color == Color.BLACK:
+		emission_color = EmissionController.generate_window_emission()
 
 	# Add window glass (goes to glass surface)
 	GlassGenerator.add_window_glass(
@@ -59,3 +62,5 @@ static func add_window(
 		frame_surface.uvs,
 		frame_surface.indices
 	)
+
+	return emission_color  # Return the emission for tracking

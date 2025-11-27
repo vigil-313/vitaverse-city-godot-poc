@@ -68,3 +68,12 @@ toggle_inventory={
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
+lights_and_shadows/positional_shadow/atlas_size=4096
+lights_and_shadows/positional_shadow/soft_shadows_enabled=true
+lights_and_shadows/positional_shadow/atlas_quadrant_0=3
+lights_and_shadows/positional_shadow/atlas_quadrant_1=3
+lights_and_shadows/positional_shadow/atlas_quadrant_2=2
+lights_and_shadows/positional_shadow/atlas_quadrant_3=1
+limits_3d/max_lights_per_object=256
+limits_3d/max_positional_lights=256
+gi/use_half_resolution=true

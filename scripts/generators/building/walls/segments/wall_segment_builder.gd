@@ -9,6 +9,7 @@ const GeometryUtils = preload("res://scripts/generators/building/core/geometry_u
 const WindowSystem = preload("res://scripts/generators/building/windows/window_system.gd")
 
 ## Create a single wall segment (main entry point)
+## Returns Dictionary of floor_num -> emission Color for ceiling light coordination
 static func create_wall_segment(
 	p1: Vector2, p2: Vector2,
 	height: float,
@@ -19,9 +20,12 @@ static func create_wall_segment(
 	wall_surface,
 	glass_surface,
 	frame_surface
-) -> void:
+) -> Dictionary:
 	var wall_length = p1.distance_to(p2)
 	var wall_normal = GeometryUtils.calculate_wall_normal(p1, p2)
+
+	# Track floor emissions for ceiling light coordination
+	var floor_emissions = {}
 
 	# Calculate window placement
 	var windows_per_floor = []
@@ -50,7 +54,7 @@ static func create_wall_segment(
 			var floor_top = (floor_num + 1) * floor_height
 
 			# Create wall segments around windows
-			_create_wall_with_windows(
+			var floor_emission = _create_wall_with_windows(
 				p1, p2, floor_bottom, floor_top,
 				windows_per_floor, wall_normal, wall_length,
 				wall_surface,
@@ -58,7 +62,14 @@ static func create_wall_segment(
 				frame_surface
 			)
 
+			# Track emission for this floor
+			if floor_emission.a > 0.01:
+				floor_emissions[floor_num] = floor_emission
+
+	return floor_emissions
+
 ## Create wall quad with windows cut out
+## Returns the strongest emission color from any window on this floor
 static func _create_wall_with_windows(
 	p1: Vector2, p2: Vector2,
 	floor_bottom: float, floor_top: float,
@@ -68,7 +79,10 @@ static func _create_wall_with_windows(
 	wall_surface,
 	glass_surface,
 	frame_surface
-) -> void:
+) -> Color:
+	# Track maximum emission from any window on this floor
+	var max_emission = Color.BLACK
+
 	if windows.is_empty():
 		# No windows - create full volumetric wall
 		var base_index = wall_surface.vertices.size()
@@ -77,7 +91,7 @@ static func _create_wall_with_windows(
 			wall_surface.vertices, wall_surface.normals, wall_surface.uvs, wall_surface.indices,
 			base_index
 		)
-		return
+		return max_emission
 
 	var floor_height = floor_top - floor_bottom
 	var window_vertical_offset = floor_height * 0.15
@@ -127,8 +141,8 @@ static func _create_wall_with_windows(
 				base_index
 			)
 
-		# Add complete window (reveal, glass, frame)
-		WindowSystem.add_window(
+		# Add complete window (reveal, glass, frame) and track emission
+		var emission = WindowSystem.add_window(
 			p1, p2,
 			window_left_t, window_right_t,
 			window_bottom, window_top,
@@ -137,6 +151,10 @@ static func _create_wall_with_windows(
 			glass_surface,
 			frame_surface
 		)
+
+		# Track maximum emission for this floor
+		if emission.a > max_emission.a:
+			max_emission = emission
 
 		# Update prev_end_t for next window
 		prev_end_t = window_right_t
@@ -151,3 +169,5 @@ static func _create_wall_with_windows(
 			wall_surface.vertices, wall_surface.normals, wall_surface.uvs, wall_surface.indices,
 			base_index
 		)
+
+	return max_emission
