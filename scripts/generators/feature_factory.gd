@@ -169,6 +169,54 @@ func create_water_work_items(water_data_array: Array, chunk_key: Vector2i, chunk
 
 	return work_items
 
+## Create work items for ground details in a chunk
+func create_ground_details_work_items(buildings_data: Array, roads_data: Array, chunk_key: Vector2i, chunk_node: Node, camera_pos: Vector2) -> Array:
+	var work_items = []
+
+	# Only create one work item per chunk for all ground details
+	if buildings_data.size() > 0 or roads_data.size() > 0:
+		# Calculate chunk center for priority
+		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var priority = camera_pos.distance_to(chunk_center) + 50.0  # Higher priority than furniture
+
+		work_items.append({
+			"type": "ground_details",
+			"chunk_key": chunk_key,
+			"id": "ground_" + str(chunk_key.x) + "_" + str(chunk_key.y),
+			"buildings_data": buildings_data,
+			"roads_data": roads_data,
+			"chunk_node": chunk_node,
+			"priority": priority,
+			"estimated_cost_ms": 2.0,
+			"queued_time": Time.get_ticks_msec()
+		})
+
+	return work_items
+
+## Create work items for street furniture in a chunk
+func create_street_furniture_work_items(buildings_data: Array, roads_data: Array, chunk_key: Vector2i, chunk_node: Node, camera_pos: Vector2) -> Array:
+	var work_items = []
+
+	# Only create one work item per chunk for all street furniture
+	if buildings_data.size() > 0 or roads_data.size() > 0:
+		# Calculate chunk center for priority
+		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var priority = camera_pos.distance_to(chunk_center) + 100.0  # Lower priority than buildings
+
+		work_items.append({
+			"type": "street_furniture",
+			"chunk_key": chunk_key,
+			"id": "furniture_" + str(chunk_key.x) + "_" + str(chunk_key.y),
+			"buildings_data": buildings_data,
+			"roads_data": roads_data,
+			"chunk_node": chunk_node,
+			"priority": priority,
+			"estimated_cost_ms": 1.0,
+			"queued_time": Time.get_ticks_msec()
+		})
+
+	return work_items
+
 ## Create work items for all features in a chunk (convenience method)
 func create_work_items_for_chunk(chunk_key: Vector2i, chunk_node: Node, buildings_data: Array, roads_data: Array, parks_data: Array, water_data: Array, tracking_buildings: Array, tracking_roads: Array, camera_pos: Vector2) -> Array:
 	var all_items = []
@@ -177,5 +225,7 @@ func create_work_items_for_chunk(chunk_key: Vector2i, chunk_node: Node, building
 	all_items.append_array(create_road_work_items(roads_data, chunk_key, chunk_node, tracking_roads, camera_pos))
 	all_items.append_array(create_park_work_items(parks_data, chunk_key, chunk_node, camera_pos))
 	all_items.append_array(create_water_work_items(water_data, chunk_key, chunk_node, camera_pos))
+	all_items.append_array(create_ground_details_work_items(buildings_data, roads_data, chunk_key, chunk_node, camera_pos))
+	all_items.append_array(create_street_furniture_work_items(buildings_data, roads_data, chunk_key, chunk_node, camera_pos))
 
 	return all_items

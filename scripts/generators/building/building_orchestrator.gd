@@ -13,8 +13,14 @@ const OSMParser = preload("res://scripts/generators/building/core/osm_parser.gd"
 # Wall systems
 const WallGenerator = preload("res://scripts/generators/building/walls/wall_generator.gd")
 
+# Facade systems
+const FacadeSystem = preload("res://scripts/generators/building/facades/facade_system.gd")
+
 # Roof systems
 const RoofGenerator = preload("res://scripts/generators/building/roofs/roof_generator.gd")
+
+# Exterior utilities
+const ExteriorUtilities = preload("res://scripts/generators/building/exterior/exterior_utilities.gd")
 
 # Interior systems
 const CeilingLightGenerator = preload("res://scripts/generators/building/interior/ceiling_lights/ceiling_light_generator.gd")
@@ -82,8 +88,18 @@ static func _create_building_mesh(footprint: Array, center: Vector2, height: flo
 	var context = BuildingContext.new()
 	context.initialize(osm_data, detailed, material_lib)
 
-	# Generate walls with windows (returns floor emissions for ceiling lights)
-	var floor_emissions = WallGenerator.generate_walls(context, surfaces)
+	# Generate walls with windows (returns floor emissions and wall segments)
+	var wall_result = WallGenerator.generate_walls(context, surfaces)
+	var floor_emissions = wall_result["floor_emissions"]
+	var wall_segments = wall_result["wall_segments"]
+
+	# Generate facade features (storefronts, balconies, entrances)
+	if detailed:
+		FacadeSystem.generate_facades(context, surfaces, wall_segments)
+
+	# Generate exterior utilities (gutters, downspouts, dishes, antennas)
+	if detailed:
+		ExteriorUtilities.add_utilities(context, surfaces, wall_segments)
 
 	# Generate architectural details (if detailed mode)
 	if detailed:

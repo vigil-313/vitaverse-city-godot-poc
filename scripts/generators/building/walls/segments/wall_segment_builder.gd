@@ -7,9 +7,11 @@ class_name WallSegmentBuilder
 const VolumetricWallBuilder = preload("res://scripts/generators/building/walls/segments/volumetric_wall_builder.gd")
 const GeometryUtils = preload("res://scripts/generators/building/core/geometry_utils.gd")
 const WindowSystem = preload("res://scripts/generators/building/windows/window_system.gd")
+const WindowDetails = preload("res://scripts/generators/building/windows/features/window_details.gd")
 
 ## Create a single wall segment (main entry point)
 ## Returns Dictionary of floor_num -> emission Color for ceiling light coordination
+## skip_ground_floor_windows: If true, ground floor gets solid wall (for storefronts)
 static func create_wall_segment(
 	p1: Vector2, p2: Vector2,
 	height: float,
@@ -19,7 +21,10 @@ static func create_wall_segment(
 	detailed: bool,
 	wall_surface,
 	glass_surface,
-	frame_surface
+	frame_surface,
+	skip_ground_floor_windows: bool = false,
+	building_type: String = "",
+	building_id: int = 0
 ) -> Dictionary:
 	var wall_length = p1.distance_to(p2)
 	var wall_normal = GeometryUtils.calculate_wall_normal(p1, p2)
@@ -53,13 +58,26 @@ static func create_wall_segment(
 			var floor_bottom = floor_num * floor_height
 			var floor_top = (floor_num + 1) * floor_height
 
+			# Skip windows on ground floor if requested (storefronts handle it)
+			if floor_num == 0 and skip_ground_floor_windows:
+				var base_index = wall_surface.vertices.size()
+				VolumetricWallBuilder.add_volumetric_wall_quad(
+					p1, p2, floor_bottom, floor_top, wall_normal,
+					wall_surface.vertices, wall_surface.normals, wall_surface.uvs, wall_surface.indices,
+					base_index
+				)
+				continue
+
 			# Create wall segments around windows
 			var floor_emission = _create_wall_with_windows(
 				p1, p2, floor_bottom, floor_top,
 				windows_per_floor, wall_normal, wall_length,
 				wall_surface,
 				glass_surface,
-				frame_surface
+				frame_surface,
+				building_type,
+				building_id,
+				floor_num
 			)
 
 			# Track emission for this floor
@@ -78,7 +96,10 @@ static func _create_wall_with_windows(
 	wall_length: float,
 	wall_surface,
 	glass_surface,
-	frame_surface
+	frame_surface,
+	building_type: String = "",
+	building_id: int = 0,
+	floor_num: int = 0
 ) -> Color:
 	# Track maximum emission from any window on this floor
 	var max_emission = Color.BLACK
@@ -151,6 +172,20 @@ static func _create_wall_with_windows(
 			glass_surface,
 			frame_surface
 		)
+
+		# Add window details (shutters, flower boxes, AC units) for residential
+		if building_type != "":
+			WindowDetails.add_window_details(
+				p1, p2,
+				window_left_t, window_right_t,
+				window_bottom, window_top,
+				wall_normal,
+				wall_surface,
+				building_type,
+				building_id,
+				floor_num,
+				window_idx
+			)
 
 		# Track maximum emission for this floor
 		if emission.a > max_emission.a:

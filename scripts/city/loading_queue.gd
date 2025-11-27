@@ -204,6 +204,10 @@ func _execute_work_item(work_item: Dictionary) -> bool:
 			success = _execute_water(work_item)
 		"distant_water":
 			success = _execute_distant_water(work_item)
+		"street_furniture":
+			success = _execute_street_furniture(work_item)
+		"ground_details":
+			success = _execute_ground_details(work_item)
 		_:
 			push_warning("[LoadingQueue] Unknown work item type: " + type)
 			return false
@@ -336,6 +340,54 @@ func _execute_distant_water(work_item: Dictionary) -> bool:
 	work_item["created_node"] = water_node
 
 	return water_node != null
+
+## Execute ground details creation
+func _execute_ground_details(work_item: Dictionary) -> bool:
+	var buildings_data = work_item.get("buildings_data", [])
+	var roads_data = work_item.get("roads_data", [])
+	var chunk_node = work_item.get("chunk_node")
+	var chunk_key = work_item.get("chunk_key")
+
+	if not chunk_node:
+		push_warning("[LoadingQueue] Invalid ground details work item")
+		return false
+
+	# Import generator
+	const GroundDetailsSystem = preload("res://scripts/generators/ground_details/ground_details_system.gd")
+
+	# Generate ground details
+	GroundDetailsSystem.generate_ground_details_for_chunk(
+		buildings_data,
+		roads_data,
+		chunk_node,
+		chunk_key
+	)
+
+	return true
+
+## Execute street furniture creation
+func _execute_street_furniture(work_item: Dictionary) -> bool:
+	var buildings_data = work_item.get("buildings_data", [])
+	var roads_data = work_item.get("roads_data", [])
+	var chunk_node = work_item.get("chunk_node")
+	var chunk_key = work_item.get("chunk_key")
+
+	if not chunk_node:
+		push_warning("[LoadingQueue] Invalid street furniture work item")
+		return false
+
+	# Import generator
+	const StreetFurnitureSystem = preload("res://scripts/generators/street_furniture/street_furniture_system.gd")
+
+	# Generate street furniture
+	StreetFurnitureSystem.generate_furniture_for_chunk(
+		buildings_data,
+		roads_data,
+		chunk_node,
+		chunk_key
+	)
+
+	return true
 
 ## Update chunk loading progress
 func _update_chunk_progress(chunk_key: Vector2i) -> void:
