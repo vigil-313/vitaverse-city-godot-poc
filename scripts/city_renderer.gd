@@ -18,6 +18,9 @@ extends Node3D
 # Data layer
 const OSMDataComplete = preload("res://scripts/data/osm_data_complete.gd")
 
+# Terrain layer
+const HeightmapLoader = preload("res://scripts/terrain/heightmap_loader.gd")
+
 # Generator layer
 const RoadGenerator = preload("res://scripts/generators/road_generator.gd")
 const ParkGenerator = preload("res://scripts/generators/park_generator.gd")
@@ -54,6 +57,9 @@ var chunk_manager: ChunkManager
 var camera_controller: CameraController
 var debug_ui: DebugUI
 var feature_factory: FeatureFactory
+
+# Terrain system
+var heightmap_loader: HeightmapLoader
 
 # Visual systems
 var visual_manager: VisualManager
@@ -102,11 +108,17 @@ func _ready():
 	# Initialize visual systems (requires lighting/environment to be set up)
 	_initialize_visual_systems()
 
+	# Initialize terrain system (heightmap for elevation queries)
+	_initialize_terrain()
+
 	# Initialize components
 	_initialize_components(osm_data)
 
-	# Create ground plane
+	# Create fallback ground plane (deep below terrain, only visible through gaps)
 	_create_ground_plane()
+
+	# Setup anti-aliasing
+	_setup_anti_aliasing()
 
 	print("")
 	print("✅ City rendering complete (chunked streaming enabled)!")
@@ -167,13 +179,28 @@ func _input(event: InputEvent):
 # COMPONENT INITIALIZATION
 # ========================================================================
 
+func _initialize_terrain():
+	print("🏔️ Initializing terrain system...")
+	print("")
+
+	heightmap_loader = HeightmapLoader.new()
+
+	var heightmap_config = "res://data/heightmap/heightmap_config.json"
+	if not heightmap_loader.load_heightmap(heightmap_config):
+		push_error("Failed to load heightmap - check data/heightmap/ folder")
+		return
+
+	print("   ✅ Terrain system initialized")
+	print("")
+
 func _initialize_components(osm_data: OSMDataComplete):
 	print("🔧 Initializing components...")
 	print("")
 
-	# 1. Create FeatureFactory and set MaterialLibrary
+	# 1. Create FeatureFactory and set MaterialLibrary + Heightmap
 	feature_factory = FeatureFactory.new()
 	feature_factory.material_library = material_library
+	feature_factory.heightmap = heightmap_loader
 
 	# 2. Create ChunkManager with factory
 	chunk_manager = ChunkManager.new(feature_factory, self)
@@ -464,34 +491,30 @@ func _setup_environment():
 	world_environment.environment = env
 	add_child(world_environment)
 
-## Create large ground plane with realistic texture
+## Create deep fallback ground plane (beneath terrain)
+## This is only visible if terrain has gaps - normally not seen
 func _create_ground_plane():
 	var plane_mesh = PlaneMesh.new()
-	plane_mesh.size = Vector2(10000, 10000)  # 10km x 10km ground
-	plane_mesh.subdivide_width = 50
-	plane_mesh.subdivide_depth = 50
+	plane_mesh.size = Vector2(12000, 12000)  # Larger than terrain bounds
+	plane_mesh.subdivide_width = 4
+	plane_mesh.subdivide_depth = 4
 
 	var mesh_instance = MeshInstance3D.new()
 	mesh_instance.mesh = plane_mesh
-	mesh_instance.position = Vector3(0, -0.1, 0)  # Slightly below roads/buildings
+	mesh_instance.position = Vector3(0, -50, 0)  # Deep below terrain
 
-	# Realistic ground material (dirt/grass mix)
+	# Dark material - only visible through gaps
 	var material = StandardMaterial3D.new()
+	material.albedo_color = Color(0.1, 0.08, 0.06)  # Very dark brown
+	material.roughness = 1.0
+	material.metallic = 0.0
 
-	# Base color: varied earth tones (not pure white!)
-	# Mix of dirt brown, dry grass, and grey concrete areas
-	material.albedo_color = Color.html("#8B7355")  # Earth brown
-
-	# PBR properties for natural ground
-	material.roughness = 0.95  # Very rough natural surface
-	material.metallic = 0.0    # Not metallic
-
-	# Add some subtle detail variations (optional - can enhance with noise texture later)
 	mesh_instance.material_override = material
+	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	add_child(mesh_instance)
-	print("   🌍 Ground plane created (10km x 10km)")
 
+func _setup_anti_aliasing():
 	# Enable anti-aliasing (balanced - not too blurry)
 	get_viewport().msaa_3d = Viewport.MSAA_4X  # Multi-sample AA for geometry edges
 	get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED  # Disabled FXAA (too blurry)

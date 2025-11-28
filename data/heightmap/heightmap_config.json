@@ -1,0 +1,18 @@
+{
+    "heightmap_file": "seattle_elevation.png",
+    "world_origin_x": -2897.0,
+    "world_origin_z": -6001.0,
+    "world_size_x": 5336.0,
+    "world_size_z": 8936.0,
+    "elevation_scale": 150.4,
+    "elevation_offset": -7.14,
+    "water_level": 0.5,
+    "notes": {
+        "source": "USGS 3DEP 10m DEM via OpenTopography API",
+        "projection": "UTM Zone 10N (EPSG:32610)",
+        "elevation_range": "-7.14m to 143.26m",
+        "pixel_size": "~9m",
+        "osm_center": "47.6062, -122.3321",
+        "scaling": "16-bit PNG: pixel_value (0-1) * elevation_scale + elevation_offset = meters"
+    }
+}

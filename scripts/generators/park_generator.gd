@@ -17,7 +17,7 @@ const LABEL_FONT_SIZE = 96  # Park label font size
 # ========================================================================
 
 ## Create a park mesh from footprint data
-static func create_park(footprint: Array, park_data: Dictionary, parent: Node) -> MeshInstance3D:
+static func create_park(footprint: Array, park_data: Dictionary, parent: Node, heightmap = null) -> MeshInstance3D:
 	var park_name = park_data.get("name", "unnamed")
 
 	# Validate polygon has enough points
@@ -29,6 +29,11 @@ static func create_park(footprint: Array, park_data: Dictionary, parent: Node) -
 	for point in footprint:
 		center += point
 	center /= footprint.size()
+
+	# Get terrain elevation at park center
+	var center_elevation = 0.0
+	if heightmap:
+		center_elevation = heightmap.get_elevation(center.x, -center.y)
 
 	# Create mesh from polygon using PROPER triangulation
 	var vertices = PackedVector3Array()
@@ -56,9 +61,17 @@ static func create_park(footprint: Array, park_data: Dictionary, parent: Node) -
 		reversed_indices.append(indices[i])
 	indices = reversed_indices
 
-	# Create vertices
-	for point in local_polygon:
-		vertices.append(Vector3(point.x, 0, -point.y))
+	# Create vertices with terrain-relative elevation
+	for i in range(local_polygon.size()):
+		var point = local_polygon[i]
+		var world_point = footprint[i]
+
+		# Get terrain elevation at this vertex (relative to center)
+		var vertex_elevation = 0.0
+		if heightmap:
+			vertex_elevation = heightmap.get_elevation(world_point.x, -world_point.y) - center_elevation
+
+		vertices.append(Vector3(point.x, vertex_elevation + 0.05, -point.y))  # Slight offset above terrain
 		normals.append(Vector3.UP)
 		uvs.append(Vector2(point.x / 100.0, point.y / 100.0))
 
@@ -75,7 +88,7 @@ static func create_park(footprint: Array, park_data: Dictionary, parent: Node) -
 
 	var mesh_instance = MeshInstance3D.new()
 	mesh_instance.mesh = array_mesh
-	mesh_instance.position = Vector3(center.x, 0.0, -center.y)  # Ground level
+	mesh_instance.position = Vector3(center.x, center_elevation, -center.y)  # At terrain elevation
 
 	# Vibrant green grass material with PBR shading
 	var material = StandardMaterial3D.new()

@@ -17,13 +17,13 @@ const LABEL_FONT_SIZE = 96  # Water label font size
 # ========================================================================
 
 ## Create a water mesh from footprint data
-static func create_water(footprint: Array, water_data: Dictionary, parent: Node) -> MeshInstance3D:
+static func create_water(footprint: Array, water_data: Dictionary, parent: Node, heightmap = null) -> MeshInstance3D:
 	# Handle linear waterways (streams, rivers, etc.) as paths, not polygons
 	var water_type = water_data.get("water_type", "")
 	var water_name = water_data.get("name", "unnamed")
 
 	if water_type in ["stream", "river", "canal", "drain", "ditch"]:
-		return _create_waterway_path(footprint, water_data, parent)
+		return _create_waterway_path(footprint, water_data, parent, heightmap)
 
 	# Validate polygon has enough points
 	if footprint.size() < 3:
@@ -93,11 +93,20 @@ static func create_water(footprint: Array, water_data: Dictionary, parent: Node)
 	var mesh_instance = MeshInstance3D.new()
 	mesh_instance.mesh = array_mesh
 
-	# Position based on water body size
-	if is_large_water:
-		mesh_instance.position = Vector3(center.x, 0.0, -center.y)
-	else:
-		mesh_instance.position = Vector3(center.x, 0.1, -center.y)
+	# Get water level - use terrain elevation to ensure water is visible
+	var water_level = 6.0  # Default Lake Union level
+	if heightmap:
+		# For large water bodies (Lake Union), use the fixed water level
+		# For smaller water, query terrain and place water slightly above ground
+		if is_large_water:
+			water_level = heightmap.get_water_level()
+		else:
+			# Query terrain elevation at water center and place water above it
+			var terrain_elevation = heightmap.get_elevation(center.x, -center.y)
+			water_level = terrain_elevation + 0.3  # Slightly above terrain
+
+	# Position water mesh
+	mesh_instance.position = Vector3(center.x, water_level, -center.y)
 
 	# Water material with PBR shading and transparency
 	var material = StandardMaterial3D.new()
@@ -126,7 +135,7 @@ static func create_water(footprint: Array, water_data: Dictionary, parent: Node)
 # ========================================================================
 
 ## Create linear waterway (stream/river) as an extruded path
-static func _create_waterway_path(path: Array, water_data: Dictionary, parent: Node) -> MeshInstance3D:
+static func _create_waterway_path(path: Array, water_data: Dictionary, parent: Node, heightmap = null) -> MeshInstance3D:
 	if path.size() < 2:
 		return null
 
@@ -142,6 +151,12 @@ static func _create_waterway_path(path: Array, water_data: Dictionary, parent: N
 		"drain": width = 2.0
 		"ditch": width = 1.5
 
+	# Query terrain elevation at waterway center for proper placement
+	var base_elevation = 6.0  # Default
+	if heightmap:
+		# Query terrain at center and place waterway above it
+		base_elevation = heightmap.get_elevation(center.x, -center.y) + 0.2
+
 	# Create mesh similar to roads
 	var vertices = PackedVector3Array()
 	var normals = PackedVector3Array()
@@ -149,11 +164,14 @@ static func _create_waterway_path(path: Array, water_data: Dictionary, parent: N
 	var indices = PackedInt32Array()
 
 	var half_width = width / 2.0
-	var y = 0.05  # Slightly above ground
 
 	# Generate geometry along path
 	for i in range(path.size()):
 		var p = path[i] - center
+		# Query elevation at each point for terrain-following waterway
+		var y = base_elevation
+		if heightmap:
+			y = heightmap.get_elevation(path[i].x, -path[i].y) + 0.2
 		var pos_3d = Vector3(p.x, y, -p.y)
 
 		# Calculate direction

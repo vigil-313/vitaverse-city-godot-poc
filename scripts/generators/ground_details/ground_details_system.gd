@@ -15,7 +15,8 @@ static func generate_ground_details_for_chunk(
 	buildings_data: Array,
 	roads_data: Array,
 	parent: Node,
-	chunk_key: Vector2i
+	chunk_key: Vector2i,
+	heightmap = null
 ) -> void:
 	# Seed random based on chunk for determinism
 	var rng = RandomNumberGenerator.new()
@@ -23,17 +24,18 @@ static func generate_ground_details_for_chunk(
 
 	# Generate sidewalks around buildings
 	for building_data in buildings_data:
-		_generate_building_ground_details(building_data, parent, rng)
+		_generate_building_ground_details(building_data, parent, rng, heightmap)
 
 	# Generate curbs along roads
 	for road_data in roads_data:
-		CurbGenerator.generate_for_road(road_data, parent)
+		CurbGenerator.generate_for_road(road_data, parent, heightmap)
 
 ## Generate ground details around a single building
 static func _generate_building_ground_details(
 	building_data: Dictionary,
 	parent: Node,
-	rng: RandomNumberGenerator
+	rng: RandomNumberGenerator,
+	heightmap = null
 ) -> void:
 	var footprint = building_data.get("footprint", [])
 	if footprint.size() < 3:
@@ -44,17 +46,17 @@ static func _generate_building_ground_details(
 	var building_id = building_data.get("id", 0)
 
 	# Generate sidewalk around building perimeter
-	SidewalkGenerator.generate_around_building(footprint, center, parent)
+	SidewalkGenerator.generate_around_building(footprint, center, parent, heightmap)
 
 	# Generate foundation/base detail
-	BuildingFoundation.generate_for_building(footprint, center, parent)
+	BuildingFoundation.generate_for_building(footprint, center, parent, heightmap)
 
 	# Maybe add planters (more common for commercial)
 	var is_commercial = building_type.contains("commercial") or building_type.contains("retail") or building_type.contains("office")
 	var planter_chance = 0.3 if is_commercial else 0.15
 
 	if rng.randf() < planter_chance:
-		_add_planters_near_building(footprint, center, parent, rng, building_id)
+		_add_planters_near_building(footprint, center, parent, rng, building_id, heightmap)
 
 ## Add decorative planters near a building
 static func _add_planters_near_building(
@@ -62,7 +64,8 @@ static func _add_planters_near_building(
 	center: Vector2,
 	parent: Node,
 	rng: RandomNumberGenerator,
-	building_id: int
+	building_id: int,
+	heightmap = null
 ) -> void:
 	# Find corners of the building for planter placement
 	var num_planters = rng.randi_range(1, 3)
@@ -86,6 +89,12 @@ static func _add_planters_near_building(
 
 		# Place planter slightly outside corner
 		var planter_pos_2d = corner + outward * 1.5
-		var planter_pos = Vector3(planter_pos_2d.x, 0, -planter_pos_2d.y)
+
+		# Get terrain elevation
+		var elevation = 0.0
+		if heightmap:
+			elevation = heightmap.get_elevation(planter_pos_2d.x, -planter_pos_2d.y)
+
+		var planter_pos = Vector3(planter_pos_2d.x, elevation, -planter_pos_2d.y)
 
 		PlanterGenerator.generate(planter_pos, rng.randi(), parent)

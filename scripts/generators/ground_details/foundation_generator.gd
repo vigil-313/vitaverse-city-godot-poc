@@ -13,7 +13,8 @@ const FOUNDATION_INSET = 0.02    # 2cm inset for visual depth
 static func generate_for_building(
 	footprint: Array,
 	center: Vector2,
-	parent: Node
+	parent: Node,
+	heightmap = null
 ) -> void:
 	if footprint.size() < 3:
 		return
@@ -27,12 +28,17 @@ static func generate_for_building(
 	var uvs = PackedVector2Array()
 	var indices = PackedInt32Array()
 
+	# Get terrain elevation at building center
+	var center_elevation = 0.0
+	if heightmap:
+		center_elevation = heightmap.get_elevation(center.x, -center.y)
+
 	# Generate foundation segments for each wall
 	for i in range(footprint.size()):
 		var p1 = footprint[i]
 		var p2 = footprint[(i + 1) % footprint.size()]
 
-		_add_foundation_segment(p1, p2, center, vertices, normals, uvs, indices)
+		_add_foundation_segment(p1, p2, center, center_elevation, vertices, normals, uvs, indices, heightmap)
 
 	if vertices.size() == 0:
 		return
@@ -61,10 +67,12 @@ static func _add_foundation_segment(
 	p1: Vector2,
 	p2: Vector2,
 	center: Vector2,
+	center_elevation: float,
 	vertices: PackedVector3Array,
 	normals: PackedVector3Array,
 	uvs: PackedVector2Array,
-	indices: PackedInt32Array
+	indices: PackedInt32Array,
+	heightmap = null
 ) -> void:
 	var wall_dir = (p2 - p1).normalized()
 	var wall_normal = Vector2(-wall_dir.y, wall_dir.x)
@@ -85,13 +93,24 @@ static func _add_foundation_segment(
 	var outer_p1 = p1 + wall_normal * FOUNDATION_DEPTH
 	var outer_p2 = p2 + wall_normal * FOUNDATION_DEPTH
 
-	# Convert to 3D
-	var v_inner_1_top = Vector3(inner_p1.x, FOUNDATION_HEIGHT, -inner_p1.y)
-	var v_inner_2_top = Vector3(inner_p2.x, FOUNDATION_HEIGHT, -inner_p2.y)
-	var v_outer_1_top = Vector3(outer_p1.x, FOUNDATION_HEIGHT, -outer_p1.y)
-	var v_outer_2_top = Vector3(outer_p2.x, FOUNDATION_HEIGHT, -outer_p2.y)
-	var v_outer_1_bottom = Vector3(outer_p1.x, 0, -outer_p1.y)
-	var v_outer_2_bottom = Vector3(outer_p2.x, 0, -outer_p2.y)
+	# Get terrain elevation at each corner
+	var elev_inner_1 = center_elevation
+	var elev_inner_2 = center_elevation
+	var elev_outer_1 = center_elevation
+	var elev_outer_2 = center_elevation
+	if heightmap:
+		elev_inner_1 = heightmap.get_elevation(inner_p1.x, -inner_p1.y)
+		elev_inner_2 = heightmap.get_elevation(inner_p2.x, -inner_p2.y)
+		elev_outer_1 = heightmap.get_elevation(outer_p1.x, -outer_p1.y)
+		elev_outer_2 = heightmap.get_elevation(outer_p2.x, -outer_p2.y)
+
+	# Convert to 3D with terrain elevation
+	var v_inner_1_top = Vector3(inner_p1.x, elev_inner_1 + FOUNDATION_HEIGHT, -inner_p1.y)
+	var v_inner_2_top = Vector3(inner_p2.x, elev_inner_2 + FOUNDATION_HEIGHT, -inner_p2.y)
+	var v_outer_1_top = Vector3(outer_p1.x, elev_outer_1 + FOUNDATION_HEIGHT, -outer_p1.y)
+	var v_outer_2_top = Vector3(outer_p2.x, elev_outer_2 + FOUNDATION_HEIGHT, -outer_p2.y)
+	var v_outer_1_bottom = Vector3(outer_p1.x, elev_outer_1, -outer_p1.y)
+	var v_outer_2_bottom = Vector3(outer_p2.x, elev_outer_2, -outer_p2.y)
 
 	# Top surface (horizontal ledge)
 	var base_idx = vertices.size()

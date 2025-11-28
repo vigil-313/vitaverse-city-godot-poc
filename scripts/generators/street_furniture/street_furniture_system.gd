@@ -31,7 +31,8 @@ static func generate_furniture_for_chunk(
 	buildings_data: Array,
 	roads_data: Array,
 	parent: Node,
-	chunk_key: Vector2i
+	chunk_key: Vector2i,
+	heightmap = null
 ) -> void:
 	# Seed random based on chunk for determinism
 	var rng = RandomNumberGenerator.new()
@@ -42,18 +43,19 @@ static func generate_furniture_for_chunk(
 
 	# Place furniture near buildings
 	for building_data in buildings_data:
-		_place_furniture_near_building(building_data, parent, rng, placed_positions)
+		_place_furniture_near_building(building_data, parent, rng, placed_positions, heightmap)
 
 	# Place lamps along roads
 	for road_data in roads_data:
-		_place_lamps_along_road(road_data, parent, rng, placed_positions)
+		_place_lamps_along_road(road_data, parent, rng, placed_positions, heightmap)
 
 ## Place furniture items near a building's entrance area
 static func _place_furniture_near_building(
 	building_data: Dictionary,
 	parent: Node,
 	rng: RandomNumberGenerator,
-	placed_positions: Array[Vector3]
+	placed_positions: Array[Vector3],
+	heightmap = null
 ) -> void:
 	var footprint = building_data.get("footprint", [])
 	if footprint.size() < 3:
@@ -88,7 +90,13 @@ static func _place_furniture_near_building(
 
 	# Calculate sidewalk position (offset from building)
 	var sidewalk_center = wall_center + wall_normal * SIDEWALK_OFFSET
-	var sidewalk_pos_3d = Vector3(sidewalk_center.x, 0, -sidewalk_center.y)
+
+	# Get terrain elevation at sidewalk position
+	var sidewalk_elevation = 0.0
+	if heightmap:
+		sidewalk_elevation = heightmap.get_elevation(sidewalk_center.x, -sidewalk_center.y)
+
+	var sidewalk_pos_3d = Vector3(sidewalk_center.x, sidewalk_elevation, -sidewalk_center.y)
 
 	# Check if position is too close to existing furniture
 	if _is_too_close(sidewalk_pos_3d, placed_positions, FURNITURE_SPACING * 0.5):
@@ -108,7 +116,11 @@ static func _place_furniture_near_building(
 	var bench_threshold = BENCH_CHANCE * (1.5 if is_commercial else 1.0)
 	if bench_roll < bench_threshold and not placed_something:
 		var bench_offset = wall_dir * rng.randf_range(-2.0, 2.0)
-		var bench_pos = sidewalk_pos_3d + Vector3(bench_offset.x, 0, -bench_offset.y)
+		var bench_pos_2d = sidewalk_center + bench_offset
+		var bench_elevation = sidewalk_elevation
+		if heightmap:
+			bench_elevation = heightmap.get_elevation(bench_pos_2d.x, -bench_pos_2d.y)
+		var bench_pos = Vector3(bench_pos_2d.x, bench_elevation, -bench_pos_2d.y)
 
 		if not _is_too_close(bench_pos, placed_positions, FURNITURE_SPACING):
 			BenchGenerator.generate(bench_pos, facing_angle, parent)
@@ -119,7 +131,11 @@ static func _place_furniture_near_building(
 	var trash_roll = rng.randf()
 	if trash_roll < TRASH_CAN_CHANCE:
 		var trash_offset = wall_dir * rng.randf_range(3.0, 5.0)
-		var trash_pos = sidewalk_pos_3d + Vector3(trash_offset.x, 0, -trash_offset.y)
+		var trash_pos_2d = sidewalk_center + trash_offset
+		var trash_elevation = sidewalk_elevation
+		if heightmap:
+			trash_elevation = heightmap.get_elevation(trash_pos_2d.x, -trash_pos_2d.y)
+		var trash_pos = Vector3(trash_pos_2d.x, trash_elevation, -trash_pos_2d.y)
 
 		if not _is_too_close(trash_pos, placed_positions, FURNITURE_SPACING * 0.7):
 			TrashCanGenerator.generate(trash_pos, parent)
@@ -130,8 +146,11 @@ static func _place_furniture_near_building(
 	var bike_threshold = BIKE_RACK_CHANCE * (2.0 if is_commercial else 0.5)
 	if bike_roll < bike_threshold:
 		var bike_offset = wall_dir * rng.randf_range(-4.0, 4.0)
-		var bike_pos = sidewalk_pos_3d + Vector3(bike_offset.x, 0, -bike_offset.y)
-		bike_pos += Vector3(wall_normal.x * 1.5, 0, -wall_normal.y * 1.5)  # Further from building
+		var bike_pos_2d = sidewalk_center + bike_offset + wall_normal * 1.5  # Further from building
+		var bike_elevation = sidewalk_elevation
+		if heightmap:
+			bike_elevation = heightmap.get_elevation(bike_pos_2d.x, -bike_pos_2d.y)
+		var bike_pos = Vector3(bike_pos_2d.x, bike_elevation, -bike_pos_2d.y)
 
 		if not _is_too_close(bike_pos, placed_positions, FURNITURE_SPACING):
 			BikeRackGenerator.generate(bike_pos, facing_angle, parent)
@@ -141,7 +160,10 @@ static func _place_furniture_near_building(
 	var bollard_roll = rng.randf()
 	if bollard_roll < BOLLARD_CHANCE and is_commercial:
 		var corner_pos_2d = wall_p1 + wall_normal * SIDEWALK_OFFSET
-		var corner_pos = Vector3(corner_pos_2d.x, 0, -corner_pos_2d.y)
+		var corner_elevation = sidewalk_elevation
+		if heightmap:
+			corner_elevation = heightmap.get_elevation(corner_pos_2d.x, -corner_pos_2d.y)
+		var corner_pos = Vector3(corner_pos_2d.x, corner_elevation, -corner_pos_2d.y)
 
 		if not _is_too_close(corner_pos, placed_positions, 2.0):
 			BollardGenerator.generate(corner_pos, parent)
@@ -152,7 +174,8 @@ static func _place_lamps_along_road(
 	road_data: Dictionary,
 	parent: Node,
 	rng: RandomNumberGenerator,
-	placed_positions: Array[Vector3]
+	placed_positions: Array[Vector3],
+	heightmap = null
 ) -> void:
 	var path = road_data.get("path", [])
 	if path.size() < 2:
@@ -208,7 +231,12 @@ static func _place_lamps_along_road(
 		var side = 1.0 if lamp_idx % 2 == 0 else -1.0
 		lamp_pos_2d += road_normal * (4.0 * side)  # 4m from road center
 
-		var lamp_pos = Vector3(lamp_pos_2d.x, 0, -lamp_pos_2d.y)
+		# Get terrain elevation at lamp position
+		var lamp_elevation = 0.0
+		if heightmap:
+			lamp_elevation = heightmap.get_elevation(lamp_pos_2d.x, -lamp_pos_2d.y)
+
+		var lamp_pos = Vector3(lamp_pos_2d.x, lamp_elevation, -lamp_pos_2d.y)
 
 		# Random chance to skip
 		if rng.randf() > LAMP_CHANCE:

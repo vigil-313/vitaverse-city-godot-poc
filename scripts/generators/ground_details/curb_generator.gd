@@ -10,7 +10,7 @@ const CURB_WIDTH = 0.2        # 20cm wide curb top
 const CURB_OFFSET = 0.1       # Offset from road edge
 
 ## Main entry point - generate curbs along a road
-static func generate_for_road(road_data: Dictionary, parent: Node) -> void:
+static func generate_for_road(road_data: Dictionary, parent: Node, heightmap = null) -> void:
 	var path = road_data.get("path", [])
 	if path.size() < 2:
 		return
@@ -36,8 +36,8 @@ static func generate_for_road(road_data: Dictionary, parent: Node) -> void:
 		var p1 = path[i]
 		var p2 = path[i + 1]
 
-		_add_curb_segment(p1, p2, width / 2.0 + CURB_OFFSET, vertices, normals, uvs, indices)
-		_add_curb_segment(p1, p2, -(width / 2.0 + CURB_OFFSET), vertices, normals, uvs, indices)
+		_add_curb_segment(p1, p2, width / 2.0 + CURB_OFFSET, vertices, normals, uvs, indices, heightmap)
+		_add_curb_segment(p1, p2, -(width / 2.0 + CURB_OFFSET), vertices, normals, uvs, indices, heightmap)
 
 	if vertices.size() == 0:
 		return
@@ -69,7 +69,8 @@ static func _add_curb_segment(
 	vertices: PackedVector3Array,
 	normals: PackedVector3Array,
 	uvs: PackedVector2Array,
-	indices: PackedInt32Array
+	indices: PackedInt32Array,
+	heightmap = null
 ) -> void:
 	var road_dir = (p2 - p1).normalized()
 	var road_normal = Vector2(-road_dir.y, road_dir.x)
@@ -87,13 +88,24 @@ static func _add_curb_segment(
 	var outer_p1 = p1 + outer_offset
 	var outer_p2 = p2 + outer_offset
 
-	# Convert to 3D
-	var v_inner_1_bottom = Vector3(inner_p1.x, 0, -inner_p1.y)
-	var v_inner_2_bottom = Vector3(inner_p2.x, 0, -inner_p2.y)
-	var v_inner_1_top = Vector3(inner_p1.x, CURB_HEIGHT, -inner_p1.y)
-	var v_inner_2_top = Vector3(inner_p2.x, CURB_HEIGHT, -inner_p2.y)
-	var v_outer_1_top = Vector3(outer_p1.x, CURB_HEIGHT, -outer_p1.y)
-	var v_outer_2_top = Vector3(outer_p2.x, CURB_HEIGHT, -outer_p2.y)
+	# Get terrain elevation at curb positions
+	var elev_inner_1 = 0.0
+	var elev_inner_2 = 0.0
+	var elev_outer_1 = 0.0
+	var elev_outer_2 = 0.0
+	if heightmap:
+		elev_inner_1 = heightmap.get_elevation(inner_p1.x, -inner_p1.y)
+		elev_inner_2 = heightmap.get_elevation(inner_p2.x, -inner_p2.y)
+		elev_outer_1 = heightmap.get_elevation(outer_p1.x, -outer_p1.y)
+		elev_outer_2 = heightmap.get_elevation(outer_p2.x, -outer_p2.y)
+
+	# Convert to 3D with terrain elevation
+	var v_inner_1_bottom = Vector3(inner_p1.x, elev_inner_1, -inner_p1.y)
+	var v_inner_2_bottom = Vector3(inner_p2.x, elev_inner_2, -inner_p2.y)
+	var v_inner_1_top = Vector3(inner_p1.x, elev_inner_1 + CURB_HEIGHT, -inner_p1.y)
+	var v_inner_2_top = Vector3(inner_p2.x, elev_inner_2 + CURB_HEIGHT, -inner_p2.y)
+	var v_outer_1_top = Vector3(outer_p1.x, elev_outer_1 + CURB_HEIGHT, -outer_p1.y)
+	var v_outer_2_top = Vector3(outer_p2.x, elev_outer_2 + CURB_HEIGHT, -outer_p2.y)
 
 	# Inner face (facing road)
 	var base_idx = vertices.size()

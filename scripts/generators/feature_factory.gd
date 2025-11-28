@@ -16,9 +16,10 @@ class_name FeatureFactory
 # ========================================================================
 
 var material_library = null  # MaterialLibrary (no type hint to avoid dependency issues)
+var heightmap = null  # HeightmapLoader for terrain elevation queries
 
 func _init():
-	pass  # MaterialLibrary set externally via property
+	pass  # MaterialLibrary and heightmap set externally via properties
 
 # ========================================================================
 # CHUNK FEATURE CREATION
@@ -81,6 +82,7 @@ func create_building_work_items(buildings_data: Array, chunk_key: Vector2i, chun
 			"data": building_data,
 			"chunk_node": chunk_node,
 			"tracking_array": tracking_array,
+			"heightmap": heightmap,
 			"priority": priority,
 			"estimated_cost_ms": 0.4,  # Average from profiling
 			"queued_time": Time.get_ticks_msec()
@@ -112,6 +114,7 @@ func create_road_work_items(roads_data: Array, chunk_key: Vector2i, chunk_node: 
 			"data": road_data,
 			"chunk_node": chunk_node,
 			"tracking_array": tracking_array,
+			"heightmap": heightmap,
 			"priority": priority,
 			"estimated_cost_ms": 0.03,  # Average from profiling
 			"queued_time": Time.get_ticks_msec()
@@ -137,6 +140,7 @@ func create_park_work_items(parks_data: Array, chunk_key: Vector2i, chunk_node: 
 			"id": "park_" + str(park_data.get("id", "")),
 			"data": park_data,
 			"chunk_node": chunk_node,
+			"heightmap": heightmap,
 			"priority": priority,
 			"estimated_cost_ms": 0.1,  # Average from profiling
 			"queued_time": Time.get_ticks_msec()
@@ -162,6 +166,7 @@ func create_water_work_items(water_data_array: Array, chunk_key: Vector2i, chunk
 			"id": "water_" + str(water_data.get("id", "")),
 			"data": water_data,
 			"chunk_node": chunk_node,
+			"heightmap": heightmap,
 			"priority": priority,
 			"estimated_cost_ms": 0.1,  # Average from profiling
 			"queued_time": Time.get_ticks_msec()
@@ -186,6 +191,7 @@ func create_ground_details_work_items(buildings_data: Array, roads_data: Array, 
 			"buildings_data": buildings_data,
 			"roads_data": roads_data,
 			"chunk_node": chunk_node,
+			"heightmap": heightmap,
 			"priority": priority,
 			"estimated_cost_ms": 2.0,
 			"queued_time": Time.get_ticks_msec()
@@ -210,8 +216,55 @@ func create_street_furniture_work_items(buildings_data: Array, roads_data: Array
 			"buildings_data": buildings_data,
 			"roads_data": roads_data,
 			"chunk_node": chunk_node,
+			"heightmap": heightmap,
 			"priority": priority,
 			"estimated_cost_ms": 1.0,
+			"queued_time": Time.get_ticks_msec()
+		})
+
+	return work_items
+
+## Create work item for terrain mesh in a chunk
+func create_terrain_work_items(chunk_key: Vector2i, chunk_node: Node, camera_pos: Vector2) -> Array:
+	var work_items = []
+
+	# Always create terrain for each chunk
+	var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+	var priority = camera_pos.distance_to(chunk_center) - 200.0  # Highest priority (render terrain first)
+
+	work_items.append({
+		"type": "terrain",
+		"chunk_key": chunk_key,
+		"id": "terrain_" + str(chunk_key.x) + "_" + str(chunk_key.y),
+		"chunk_node": chunk_node,
+		"heightmap": heightmap,
+		"priority": priority,
+		"estimated_cost_ms": 1.5,  # Terrain mesh generation
+		"queued_time": Time.get_ticks_msec()
+	})
+
+	return work_items
+
+## Create work items for vegetation in a chunk
+func create_vegetation_work_items(parks_data: Array, roads_data: Array, chunk_key: Vector2i, chunk_node: Node, camera_pos: Vector2) -> Array:
+	var work_items = []
+
+	# Only create one work item per chunk for all vegetation
+	if parks_data.size() > 0 or roads_data.size() > 0:
+		# Calculate chunk center for priority
+		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var priority = camera_pos.distance_to(chunk_center) + 150.0  # Lower priority than buildings/roads
+
+		work_items.append({
+			"type": "vegetation",
+			"chunk_key": chunk_key,
+			"id": "vegetation_" + str(chunk_key.x) + "_" + str(chunk_key.y),
+			"parks_data": parks_data,
+			"roads_data": roads_data,
+			"chunk_node": chunk_node,
+			"heightmap": heightmap,
+			"priority": priority,
+			"estimated_cost_ms": 3.0,  # Trees can be more expensive
 			"queued_time": Time.get_ticks_msec()
 		})
 
@@ -221,11 +274,16 @@ func create_street_furniture_work_items(buildings_data: Array, roads_data: Array
 func create_work_items_for_chunk(chunk_key: Vector2i, chunk_node: Node, buildings_data: Array, roads_data: Array, parks_data: Array, water_data: Array, tracking_buildings: Array, tracking_roads: Array, camera_pos: Vector2) -> Array:
 	var all_items = []
 
+	# Terrain first (highest priority - ground must exist before features)
+	all_items.append_array(create_terrain_work_items(chunk_key, chunk_node, camera_pos))
+
+	# Then features that sit on terrain
 	all_items.append_array(create_building_work_items(buildings_data, chunk_key, chunk_node, tracking_buildings, camera_pos))
 	all_items.append_array(create_road_work_items(roads_data, chunk_key, chunk_node, tracking_roads, camera_pos))
 	all_items.append_array(create_park_work_items(parks_data, chunk_key, chunk_node, camera_pos))
 	all_items.append_array(create_water_work_items(water_data, chunk_key, chunk_node, camera_pos))
 	all_items.append_array(create_ground_details_work_items(buildings_data, roads_data, chunk_key, chunk_node, camera_pos))
 	all_items.append_array(create_street_furniture_work_items(buildings_data, roads_data, chunk_key, chunk_node, camera_pos))
+	all_items.append_array(create_vegetation_work_items(parks_data, roads_data, chunk_key, chunk_node, camera_pos))
 
 	return all_items

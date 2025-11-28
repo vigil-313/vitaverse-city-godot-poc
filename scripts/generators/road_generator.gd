@@ -20,7 +20,7 @@ const LABEL_FONT_SIZE_OTHER = 96  # Road label font size
 # ========================================================================
 
 ## Create a road from path data
-static func create_road(path: Array, road_data: Dictionary, parent: Node, roads_tracking: Array) -> Node3D:
+static func create_road(path: Array, road_data: Dictionary, parent: Node, roads_tracking: Array, heightmap = null) -> Node3D:
 	var highway_type = road_data.get("highway_type", "")
 
 	# Skip service roads and cycleways
@@ -28,7 +28,7 @@ static func create_road(path: Array, road_data: Dictionary, parent: Node, roads_
 		return null
 
 	var width = get_road_width(highway_type)
-	var road_node = _create_simple_road(path, width, road_data)
+	var road_node = _create_simple_road(path, width, road_data, heightmap)
 
 	if road_node:
 		parent.add_child(road_node)
@@ -40,7 +40,7 @@ static func create_road(path: Array, road_data: Dictionary, parent: Node, roads_
 
 		# Add street lamps along road (skip motorways/highways)
 		if highway_type not in ["motorway", "trunk"]:
-			StreetLampGenerator.add_lamps_along_road(path, parent, road_data)
+			StreetLampGenerator.add_lamps_along_road(path, parent, road_data, heightmap)
 
 	return road_node
 
@@ -79,17 +79,22 @@ static func get_road_elevation(highway_type: String) -> float:
 # ========================================================================
 
 ## Create simple road without LOD - using continuous mesh
-static func _create_simple_road(path: Array, width: float, road_data: Dictionary = {}) -> Node3D:
+static func _create_simple_road(path: Array, width: float, road_data: Dictionary = {}, heightmap = null) -> Node3D:
 	# Calculate road center for positioning
 	var road_center = Vector2.ZERO
 	for point in path:
 		road_center += point
 	road_center /= path.size()
 
+	# Get terrain elevation at road center
+	var center_elevation = 0.0
+	if heightmap:
+		center_elevation = heightmap.get_elevation(road_center.x, -road_center.y)
+
 	# Create wrapper node for this road
 	var road_node = Node3D.new()
 	road_node.name = "Road_" + str(road_data.get("id", 0))
-	road_node.position = Vector3(road_center.x, 0, -road_center.y)
+	road_node.position = Vector3(road_center.x, center_elevation, -road_center.y)
 
 	# Check if this is a bridge
 	var is_bridge = road_data.get("bridge", false)
@@ -99,8 +104,8 @@ static func _create_simple_road(path: Array, width: float, road_data: Dictionary
 	var highway_type = road_data.get("highway_type", "")
 	var base_elevation = get_road_elevation(highway_type)
 
-	# Create continuous road mesh
-	var mesh_instance = _create_road_mesh(path, road_center, width, bridge_height, base_elevation, road_data)
+	# Create continuous road mesh with terrain following
+	var mesh_instance = _create_road_mesh(path, road_center, width, bridge_height, base_elevation, road_data, heightmap, center_elevation)
 	if mesh_instance:
 		road_node.add_child(mesh_instance)
 
@@ -128,7 +133,7 @@ static func _create_simple_road(path: Array, width: float, road_data: Dictionary
 	return road_node
 
 ## Create continuous road mesh along path with curbs
-static func _create_road_mesh(path: Array, road_center: Vector2, width: float, bridge_height: float, base_elevation: float, road_data: Dictionary) -> MeshInstance3D:
+static func _create_road_mesh(path: Array, road_center: Vector2, width: float, bridge_height: float, base_elevation: float, road_data: Dictionary, heightmap = null, center_elevation: float = 0.0) -> MeshInstance3D:
 	if path.size() < 2:
 		return null
 
@@ -143,11 +148,17 @@ static func _create_road_mesh(path: Array, road_center: Vector2, width: float, b
 	var road_thickness = 0.30  # 30cm road thickness (slab depth)
 
 	var half_width = width / 2.0
-	var y = bridge_height + base_elevation  # Bridge height + road type elevation
 
 	# Generate road geometry with curbs: extrude along path
 	for i in range(path.size()):
 		var p = path[i] - road_center
+
+		# Calculate terrain-relative elevation at this point
+		var terrain_elevation = 0.0
+		if heightmap:
+			terrain_elevation = heightmap.get_elevation(path[i].x, -path[i].y) - center_elevation
+
+		var y = bridge_height + base_elevation + terrain_elevation  # Bridge + road type + terrain offset
 		var pos_3d = Vector3(p.x, y, -p.y)
 
 		# Calculate direction for perpendicular offset
@@ -331,7 +342,8 @@ static func _create_road_mesh(path: Array, road_center: Vector2, width: float, b
 
 	# Add lane markings for wider roads
 	if width >= 8.0:  # Only add markings to roads 8m+ wide
-		_add_lane_markings(mesh_instance, path, road_center, y)
+		var road_y = bridge_height + base_elevation  # Base road height (markings don't follow terrain variation)
+		_add_lane_markings(mesh_instance, path, road_center, road_y)
 
 	return mesh_instance
 

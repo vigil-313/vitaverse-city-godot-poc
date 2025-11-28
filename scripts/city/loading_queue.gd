@@ -194,6 +194,8 @@ func _execute_work_item(work_item: Dictionary) -> bool:
 	var success = false
 
 	match type:
+		"terrain":
+			success = _execute_terrain(work_item)
 		"building":
 			success = _execute_building(work_item)
 		"road":
@@ -208,17 +210,50 @@ func _execute_work_item(work_item: Dictionary) -> bool:
 			success = _execute_street_furniture(work_item)
 		"ground_details":
 			success = _execute_ground_details(work_item)
+		"vegetation":
+			success = _execute_vegetation(work_item)
 		_:
 			push_warning("[LoadingQueue] Unknown work item type: " + type)
 			return false
 
 	return success
 
+## Execute terrain mesh creation
+func _execute_terrain(work_item: Dictionary) -> bool:
+	var chunk_key = work_item.get("chunk_key")
+	var chunk_node = work_item.get("chunk_node")
+	var heightmap = work_item.get("heightmap")
+
+	if not chunk_node:
+		push_warning("[LoadingQueue] Invalid terrain work item - no chunk_node")
+		return false
+
+	# Import generator
+	const TerrainMesh = preload("res://scripts/terrain/terrain_mesh.gd")
+
+	# Generate terrain mesh (500m chunk size)
+	var terrain_node = TerrainMesh.create_terrain_chunk(
+		chunk_key,
+		500.0,
+		heightmap
+	)
+
+	if terrain_node:
+		chunk_node.add_child(terrain_node)
+
+	work_item["created_node"] = terrain_node
+
+	return terrain_node != null
+
+## Debug counter for building placement
+var _debug_building_count: int = 0
+
 ## Execute building creation
 func _execute_building(work_item: Dictionary) -> bool:
 	var building_data = work_item.get("data")
 	var chunk_node = work_item.get("chunk_node")
 	var tracking_array = work_item.get("tracking_array")
+	var heightmap = work_item.get("heightmap")
 
 	if not building_data or not chunk_node:
 		push_warning("[LoadingQueue] Invalid building work item")
@@ -232,7 +267,19 @@ func _execute_building(work_item: Dictionary) -> bool:
 	var building_node = BuildingOrchestrator.create_building(building_data, chunk_node, true)
 
 	if building_node:
-		building_node.position = Vector3(center.x, 0, -center.y)
+		# Get terrain elevation at building center
+		var ground_elevation = 0.0
+		if heightmap:
+			ground_elevation = heightmap.get_elevation(center.x, -center.y)
+		else:
+			push_warning("[LoadingQueue] WARNING: heightmap is null for building!")
+
+		# Debug: Print first few buildings
+		_debug_building_count += 1
+		if _debug_building_count <= 5:
+			print("[LoadingQueue] Building #", _debug_building_count, " at OSM (", "%.1f" % center.x, ", ", "%.1f" % center.y, ") -> Y=", "%.2f" % ground_elevation)
+
+		building_node.position = Vector3(center.x, ground_elevation, -center.y)
 
 		# Track for cleanup during chunk unload
 		tracking_array.append({
@@ -250,6 +297,7 @@ func _execute_road(work_item: Dictionary) -> bool:
 	var road_data = work_item.get("data")
 	var chunk_node = work_item.get("chunk_node")
 	var tracking_array = work_item.get("tracking_array")
+	var heightmap = work_item.get("heightmap")
 
 	if not road_data or not chunk_node:
 		push_warning("[LoadingQueue] Invalid road work item")
@@ -258,9 +306,9 @@ func _execute_road(work_item: Dictionary) -> bool:
 	# Import generator
 	const RoadGenerator = preload("res://scripts/generators/road_generator.gd")
 
-	# Generate road
+	# Generate road with elevation data
 	var path = road_data.get("path", [])
-	var road_node = RoadGenerator.create_road(path, road_data, chunk_node, tracking_array)
+	var road_node = RoadGenerator.create_road(path, road_data, chunk_node, tracking_array, heightmap)
 
 	work_item["created_node"] = road_node
 
@@ -270,6 +318,7 @@ func _execute_road(work_item: Dictionary) -> bool:
 func _execute_park(work_item: Dictionary) -> bool:
 	var park_data = work_item.get("data")
 	var chunk_node = work_item.get("chunk_node")
+	var heightmap = work_item.get("heightmap")
 
 	if not park_data or not chunk_node:
 		push_warning("[LoadingQueue] Invalid park work item")
@@ -278,9 +327,9 @@ func _execute_park(work_item: Dictionary) -> bool:
 	# Import generator
 	const ParkGenerator = preload("res://scripts/generators/park_generator.gd")
 
-	# Generate park
+	# Generate park with elevation
 	var footprint = park_data.get("footprint", [])
-	var park_node = ParkGenerator.create_park(footprint, park_data, chunk_node)
+	var park_node = ParkGenerator.create_park(footprint, park_data, chunk_node, heightmap)
 
 	work_item["created_node"] = park_node
 
@@ -290,6 +339,7 @@ func _execute_park(work_item: Dictionary) -> bool:
 func _execute_water(work_item: Dictionary) -> bool:
 	var water_data = work_item.get("data")
 	var chunk_node = work_item.get("chunk_node")
+	var heightmap = work_item.get("heightmap")
 
 	if not water_data or not chunk_node:
 		push_warning("[LoadingQueue] Invalid water work item")
@@ -298,11 +348,12 @@ func _execute_water(work_item: Dictionary) -> bool:
 	# Import generator
 	const WaterGenerator = preload("res://scripts/generators/water_generator.gd")
 
-	# Generate water
+	# Generate water (uses fixed water level from heightmap)
 	var water_node = WaterGenerator.create_water(
 		water_data.get("footprint", []),
 		water_data,
-		chunk_node
+		chunk_node,
+		heightmap
 	)
 
 	work_item["created_node"] = water_node
@@ -347,6 +398,7 @@ func _execute_ground_details(work_item: Dictionary) -> bool:
 	var roads_data = work_item.get("roads_data", [])
 	var chunk_node = work_item.get("chunk_node")
 	var chunk_key = work_item.get("chunk_key")
+	var heightmap = work_item.get("heightmap")
 
 	if not chunk_node:
 		push_warning("[LoadingQueue] Invalid ground details work item")
@@ -355,12 +407,13 @@ func _execute_ground_details(work_item: Dictionary) -> bool:
 	# Import generator
 	const GroundDetailsSystem = preload("res://scripts/generators/ground_details/ground_details_system.gd")
 
-	# Generate ground details
+	# Generate ground details with elevation
 	GroundDetailsSystem.generate_ground_details_for_chunk(
 		buildings_data,
 		roads_data,
 		chunk_node,
-		chunk_key
+		chunk_key,
+		heightmap
 	)
 
 	return true
@@ -371,6 +424,7 @@ func _execute_street_furniture(work_item: Dictionary) -> bool:
 	var roads_data = work_item.get("roads_data", [])
 	var chunk_node = work_item.get("chunk_node")
 	var chunk_key = work_item.get("chunk_key")
+	var heightmap = work_item.get("heightmap")
 
 	if not chunk_node:
 		push_warning("[LoadingQueue] Invalid street furniture work item")
@@ -379,12 +433,39 @@ func _execute_street_furniture(work_item: Dictionary) -> bool:
 	# Import generator
 	const StreetFurnitureSystem = preload("res://scripts/generators/street_furniture/street_furniture_system.gd")
 
-	# Generate street furniture
+	# Generate street furniture with elevation
 	StreetFurnitureSystem.generate_furniture_for_chunk(
 		buildings_data,
 		roads_data,
 		chunk_node,
-		chunk_key
+		chunk_key,
+		heightmap
+	)
+
+	return true
+
+## Execute vegetation creation
+func _execute_vegetation(work_item: Dictionary) -> bool:
+	var parks_data = work_item.get("parks_data", [])
+	var roads_data = work_item.get("roads_data", [])
+	var chunk_node = work_item.get("chunk_node")
+	var chunk_key = work_item.get("chunk_key")
+	var heightmap = work_item.get("heightmap")
+
+	if not chunk_node:
+		push_warning("[LoadingQueue] Invalid vegetation work item")
+		return false
+
+	# Import generator
+	const VegetationSystem = preload("res://scripts/generators/vegetation/vegetation_system.gd")
+
+	# Generate vegetation (trees in parks and along streets)
+	VegetationSystem.generate_vegetation_for_chunk(
+		parks_data,
+		roads_data,
+		chunk_node,
+		chunk_key,
+		heightmap
 	)
 
 	return true

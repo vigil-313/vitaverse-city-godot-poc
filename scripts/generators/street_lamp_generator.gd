@@ -12,7 +12,7 @@ const LAMP_HEIGHT = 5.0  # 5m tall lamp posts
 const POLE_RADIUS = 0.15  # 15cm radius pole
 
 ## Add street lamps along a road path
-static func add_lamps_along_road(road_path: Array, parent: Node3D, road_data: Dictionary = {}) -> void:
+static func add_lamps_along_road(road_path: Array, parent: Node3D, road_data: Dictionary = {}, heightmap = null) -> void:
 	if road_path.size() < 2:
 		return
 
@@ -53,8 +53,8 @@ static func add_lamps_along_road(road_path: Array, parent: Node3D, road_data: Di
 			var side = 1 if (lamp_count % 2 == 0) else -1
 			lamp_pos_2d += perpendicular * lamp_offset * side
 
-			# Create lamp
-			_create_street_lamp(parent, lamp_pos_2d, lamp_count)
+			# Create lamp with terrain elevation
+			_create_street_lamp(parent, lamp_pos_2d, lamp_count, heightmap)
 
 			lamp_count += 1
 			next_lamp_distance = LAMP_SPACING
@@ -86,13 +86,18 @@ static func _get_road_width(highway_type: String) -> float:
 			return 8.0   # Default residential width
 
 ## Create a single street lamp at position
-static func _create_street_lamp(parent: Node3D, pos_2d: Vector2, lamp_id: int) -> void:
+static func _create_street_lamp(parent: Node3D, pos_2d: Vector2, lamp_id: int, heightmap = null) -> void:
 	# Load the StreetLamp script
 	var street_lamp_script = load("res://scripts/components/street_lamp.gd")
 
+	# Get terrain elevation
+	var elevation = 0.0
+	if heightmap:
+		elevation = heightmap.get_elevation(pos_2d.x, -pos_2d.y)
+
 	var lamp = Node3D.new()
 	lamp.name = "StreetLamp_" + str(lamp_id)
-	lamp.position = Vector3(pos_2d.x, 0, -pos_2d.y)
+	lamp.position = Vector3(pos_2d.x, elevation, -pos_2d.y)
 
 	# Create pole (cylinder)
 	var pole = MeshInstance3D.new()
