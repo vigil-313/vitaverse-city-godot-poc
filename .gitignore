@@ -34,3 +34,7 @@ Thumbs.db
 .scons_env.json
 *.import
 *.backup
+
+# GDAL intermediate files
+*.tif
+*.aux.xml
