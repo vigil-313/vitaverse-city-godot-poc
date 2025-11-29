@@ -25,11 +25,12 @@ signal chunks_updated(active_count: int, building_count: int, road_count: int)
 # ========================================================================
 
 @export_group("Chunk Streaming")
-@export_range(100.0, 2000.0, 50.0) var chunk_size: float = 500.0  ## Size of each chunk (meters × meters)
-@export_range(500.0, 5000.0, 100.0) var chunk_load_radius: float = 1000.0  ## Load chunks within this distance
-@export_range(500.0, 6000.0, 100.0) var chunk_unload_radius: float = 2000.0  ## Unload chunks beyond this distance (increased hysteresis)
-@export_range(0.1, 2.0, 0.1) var chunk_update_interval: float = 1.0  ## How often to check for chunk updates (seconds)
-@export var max_chunks_per_frame: int = 2  ## Maximum chunks to load/unload per update cycle
+## Runtime-adjustable values (initialized from Config singleton)
+var chunk_size: float
+var chunk_load_radius: float
+var chunk_unload_radius: float
+var chunk_update_interval: float
+var max_chunks_per_frame: int
 
 # ========================================================================
 # STATE
@@ -74,10 +75,17 @@ func _init(p_feature_factory, p_scene_root: Node):
 	feature_factory = p_feature_factory
 	scene_root = p_scene_root
 
+	# Initialize from GameConfig (static class)
+	chunk_size = GameConfig.CHUNK_SIZE
+	chunk_load_radius = GameConfig.CHUNK_LOAD_RADIUS
+	chunk_unload_radius = GameConfig.CHUNK_UNLOAD_RADIUS
+	chunk_update_interval = GameConfig.CHUNK_UPDATE_INTERVAL
+	max_chunks_per_frame = GameConfig.CHUNK_MAX_PER_FRAME
+
 	# Create loading queue
 	const LoadingQueue = preload("res://scripts/city/loading_queue.gd")
 	loading_queue = LoadingQueue.new()
-	loading_queue.frame_budget_ms = 5.0
+	loading_queue.frame_budget_ms = GameConfig.LOADING_FRAME_BUDGET_MS
 	loading_queue.enable_logging = false  # Disabled - we'll track at chunk level instead
 
 	# Connect signals
@@ -467,7 +475,7 @@ func _queue_distant_water(camera_pos: Vector2, extended_radius: float):
 
 			# Only load LARGE water bodies (lakes, not ponds)
 			var area = _calculate_polygon_area(footprint)
-			if area > 50000.0:  # Same threshold as in water creation
+			if area > GameConfig.WATER_LARGE_THRESHOLD:
 				var center = water_data.get("center", Vector2.ZERO)
 				var water_name = water_data.get("name", "")
 

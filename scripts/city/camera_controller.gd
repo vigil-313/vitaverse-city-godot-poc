@@ -14,7 +14,7 @@ signal camera_moved(position: Vector3)
 signal camera_speed_changed(normal_speed: float, fast_speed: float)
 
 # ========================================================================
-# CONFIGURATION
+# CONFIGURATION (initialized from Config singleton in _ready)
 # ========================================================================
 
 ## Normal movement speed (m/s)
@@ -25,6 +25,12 @@ var camera_fast_speed: float = 100.0
 
 ## Mouse sensitivity for camera rotation
 var camera_sensitivity: float = 0.002
+
+func _ready():
+	# Initialize from GameConfig (static class)
+	camera_speed = GameConfig.CAMERA_SPEED_NORMAL
+	camera_fast_speed = GameConfig.CAMERA_SPEED_FAST
+	camera_sensitivity = GameConfig.CAMERA_SENSITIVITY
 
 # ========================================================================
 # STATE
@@ -154,10 +160,8 @@ func handle_input(event: InputEvent):
 
 ## Set camera speeds (used by debug UI)
 func set_speeds(speed_multiplier: float):
-	var base_speed = 20.0
-	var base_fast_speed = 100.0
-	camera_speed = base_speed * speed_multiplier
-	camera_fast_speed = base_fast_speed * speed_multiplier
+	camera_speed = GameConfig.CAMERA_SPEED_NORMAL * speed_multiplier
+	camera_fast_speed = GameConfig.CAMERA_SPEED_FAST * speed_multiplier
 	camera_speed_changed.emit(camera_speed, camera_fast_speed)
 
 ## Get current camera heading

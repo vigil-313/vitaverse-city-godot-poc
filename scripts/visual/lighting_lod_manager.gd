@@ -12,22 +12,16 @@ class_name LightingLODManager
 ##   FAR (300m+):     Emissive materials only, no dynamic lights
 
 # ========================================================================
-# CONFIGURATION CONSTANTS
+# CONFIGURATION (from Config singleton)
 # ========================================================================
 
-## LOD distance thresholds
-const LOD_NEAR_DISTANCE := 200.0    ## 0-200m: Full quality with shadows
-const LOD_MID_DISTANCE := 1000.0    ## 200-1000m: No shadows, covers most visible city
-const LOD_TRANSITION_RANGE := 20.0  ## Smooth transition band (unused for now)
-const HYSTERESIS_BUFFER := 20.0     ## Prevents oscillation at boundaries
-
-## Light budgets - increased since floor lights are now sparse (40% per building)
-## With fewer total lights, we can keep more active in NEAR/MID tiers
-const MAX_SHADOWED_LIGHTS := 48     ## More shadows affordable with sparse lights
-const MAX_TOTAL_LIGHTS := 600       ## Higher budget for city-wide coverage
-
-## Update throttling
-const UPDATE_INTERVAL := 0.1        ## Update LOD every 100ms
+## LOD distance thresholds - accessed via Config singleton
+## GameConfig.LOD_NEAR_DISTANCE: 0-200m: Full quality with shadows
+## GameConfig.LOD_MID_DISTANCE: 200-1000m: No shadows, covers most visible city
+## GameConfig.LOD_HYSTERESIS_BUFFER: Prevents oscillation at boundaries
+## GameConfig.LIGHT_MAX_SHADOWED: Maximum shadowed lights
+## GameConfig.LIGHT_MAX_TOTAL: Maximum total active lights
+## GameConfig.LOD_UPDATE_INTERVAL: Update LOD every 100ms
 
 # ========================================================================
 # LOD TIERS
@@ -82,10 +76,10 @@ var stats := {
 
 func _ready():
 	print("[LightingLODManager] Initialized")
-	print("  - NEAR distance: ", LOD_NEAR_DISTANCE, "m (with shadows)")
-	print("  - MID distance: ", LOD_MID_DISTANCE, "m (no shadows)")
-	print("  - Max shadowed: ", MAX_SHADOWED_LIGHTS)
-	print("  - Max total active: ", MAX_TOTAL_LIGHTS)
+	print("  - NEAR distance: ", GameConfig.LOD_NEAR_DISTANCE, "m (with shadows)")
+	print("  - MID distance: ", GameConfig.LOD_MID_DISTANCE, "m (no shadows)")
+	print("  - Max shadowed: ", GameConfig.LIGHT_MAX_SHADOWED)
+	print("  - Max total active: ", GameConfig.LIGHT_MAX_TOTAL)
 	print("  - Using horizontal distance (height ignored)")
 
 # ========================================================================
@@ -118,7 +112,7 @@ func unregister_street_light(lamp) -> void:
 ## Main update function - called from CityRenderer._process()
 func update_lod(camera_position: Vector3, delta: float) -> void:
 	_update_timer += delta
-	if _update_timer < UPDATE_INTERVAL:
+	if _update_timer < GameConfig.LOD_UPDATE_INTERVAL:
 		return
 	_update_timer = 0.0
 
@@ -165,18 +159,18 @@ func _get_lod_tier_with_hysteresis(distance: float, current_tier: int) -> int:
 	match current_tier:
 		LODTier.NEAR:
 			# Only transition to MID if clearly past threshold
-			if distance > LOD_NEAR_DISTANCE + HYSTERESIS_BUFFER:
+			if distance > GameConfig.LOD_NEAR_DISTANCE + GameConfig.LOD_HYSTERESIS_BUFFER:
 				return LODTier.MID
 		LODTier.MID:
 			# Transition back to NEAR if clearly before threshold
-			if distance < LOD_NEAR_DISTANCE - HYSTERESIS_BUFFER:
+			if distance < GameConfig.LOD_NEAR_DISTANCE - GameConfig.LOD_HYSTERESIS_BUFFER:
 				return LODTier.NEAR
 			# Transition to FAR if clearly past threshold
-			elif distance > LOD_MID_DISTANCE + HYSTERESIS_BUFFER:
+			elif distance > GameConfig.LOD_MID_DISTANCE + GameConfig.LOD_HYSTERESIS_BUFFER:
 				return LODTier.FAR
 		LODTier.FAR:
 			# Transition back to MID if clearly before threshold
-			if distance < LOD_MID_DISTANCE - HYSTERESIS_BUFFER:
+			if distance < GameConfig.LOD_MID_DISTANCE - GameConfig.LOD_HYSTERESIS_BUFFER:
 				return LODTier.MID
 
 	return current_tier
@@ -196,9 +190,9 @@ func _update_street_lights(camera_pos: Vector3) -> void:
 		var horizontal_dist = Vector2(camera_pos.x - lamp_pos.x, camera_pos.z - lamp_pos.z).length()
 		var tier = LODTier.NEAR
 
-		if horizontal_dist > LOD_MID_DISTANCE:
+		if horizontal_dist > GameConfig.LOD_MID_DISTANCE:
 			tier = LODTier.FAR
-		elif horizontal_dist > LOD_NEAR_DISTANCE:
+		elif horizontal_dist > GameConfig.LOD_NEAR_DISTANCE:
 			tier = LODTier.MID
 
 		if lamp.has_method("set_lod_tier"):
@@ -236,14 +230,14 @@ func _enforce_budget(camera_pos: Vector3) -> void:
 	for item in lights_with_dist:
 		var proxy = item.proxy
 
-		if active_count >= MAX_TOTAL_LIGHTS:
+		if active_count >= GameConfig.LIGHT_MAX_TOTAL:
 			# Over budget - force to FAR (emissive only)
 			proxy.set_lod_tier(LODTier.FAR, true)  # immediate=true
 			continue
 
 		# Handle shadow budget for NEAR lights
 		if proxy.current_tier == LODTier.NEAR:
-			if shadowed_count < MAX_SHADOWED_LIGHTS:
+			if shadowed_count < GameConfig.LIGHT_MAX_SHADOWED:
 				proxy.set_shadow_enabled(true)
 				shadowed_count += 1
 			else:
@@ -269,7 +263,7 @@ func _enforce_budget(camera_pos: Vector3) -> void:
 	light_count_changed.emit(shadowed_count, active_count, building_lights.size())
 
 	# Warn if we hit budget limits
-	if active_count >= MAX_TOTAL_LIGHTS:
+	if active_count >= GameConfig.LIGHT_MAX_TOTAL:
 		budget_warning.emit("Light budget exceeded - %d lights forced to FAR" % far_count)
 
 # ========================================================================

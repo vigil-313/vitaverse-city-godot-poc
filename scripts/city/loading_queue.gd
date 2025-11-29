@@ -18,16 +18,20 @@ class_name LoadingQueue
 # ========================================================================
 
 signal work_completed(type: String, chunk_key: Vector2i, node: Node3D)
+signal work_failed(type: String, chunk_key: Vector2i, error: String)
 signal chunk_fully_loaded(chunk_key: Vector2i)
 signal queue_empty()
 signal queue_progress(items_remaining: int, items_total: int)
+signal queue_overflow(rejected_count: int)
 
 # ========================================================================
 # CONFIGURATION
 # ========================================================================
 
-@export var frame_budget_ms: float = 5.0  ## Max time to spend on loading per frame
-@export var enable_logging: bool = false  ## Enable detailed logging (DISABLED to reduce spam)
+## Max time to spend on loading per frame (initialized from Config)
+var frame_budget_ms: float = 5.0
+## Enable detailed logging (DISABLED to reduce spam)
+var enable_logging: bool = false
 
 # ========================================================================
 # STATE
@@ -39,9 +43,14 @@ var work_in_progress: Dictionary = {}   # Work being processed this frame
 # Chunk tracking
 var chunks_loading: Dictionary = {}     # chunk_key → {total: int, completed: int}
 
+# Failed items tracking
+var failed_items: Array[Dictionary] = []  # Recent failed work items for debugging
+var total_items_failed: int = 0
+
 # Statistics
 var total_items_queued: int = 0
 var total_items_completed: int = 0
+var total_items_rejected: int = 0  # Rejected due to queue overflow
 var total_time_spent_ms: float = 0.0
 var items_this_frame: int = 0
 
@@ -50,15 +59,28 @@ var items_this_frame: int = 0
 # ========================================================================
 
 ## Add a work item to the queue
-func queue_work(work_item: Dictionary) -> void:
+## Returns true if queued successfully, false if rejected
+func queue_work(work_item: Dictionary) -> bool:
 	# Validate work item
 	if not work_item.has("type"):
 		push_warning("[LoadingQueue] Work item missing 'type' field")
-		return
+		_track_failed_item(work_item, "missing_type")
+		return false
 
 	if not work_item.has("chunk_key"):
 		push_warning("[LoadingQueue] Work item missing 'chunk_key' field")
-		return
+		_track_failed_item(work_item, "missing_chunk_key")
+		return false
+
+	# Enforce queue size limit
+	if work_queue.size() >= GameConfig.LOADING_MAX_QUEUE_SIZE:
+		total_items_rejected += 1
+		if total_items_rejected % 100 == 1:  # Log every 100 rejections
+			push_warning("[LoadingQueue] Queue full (%d items), rejecting %s for chunk %s" % [
+				work_queue.size(), work_item.type, str(work_item.chunk_key)
+			])
+			queue_overflow.emit(total_items_rejected)
+		return false
 
 	# Add to queue
 	work_queue.append(work_item)
@@ -76,6 +98,8 @@ func queue_work(work_item: Dictionary) -> void:
 
 	if enable_logging:
 		print("[LoadingQueue] Queued ", work_item.type, " for chunk ", chunk_key, " (queue size: ", work_queue.size(), ")")
+
+	return true
 
 ## Process work items within frame budget (call every frame)
 func process(delta: float) -> void:
@@ -116,6 +140,13 @@ func process(delta: float) -> void:
 			# Emit work completed signal
 			var node = work_item.get("created_node", null)
 			work_completed.emit(work_item.type, work_item.chunk_key, node)
+		else:
+			# Track the failure
+			_track_failed_item(work_item, "execution_failed")
+			work_failed.emit(work_item.type, work_item.chunk_key, "execution_failed")
+
+			# Still update chunk progress (mark as completed even if failed)
+			_update_chunk_progress(work_item.chunk_key)
 
 		# Emit progress signal
 		queue_progress.emit(work_queue.size(), total_items_queued)
@@ -129,8 +160,11 @@ func process(delta: float) -> void:
 func clear_queue() -> void:
 	work_queue.clear()
 	chunks_loading.clear()
+	failed_items.clear()
 	total_items_queued = 0
 	total_items_completed = 0
+	total_items_failed = 0
+	total_items_rejected = 0
 	total_time_spent_ms = 0.0
 	print("[LoadingQueue] Queue cleared")
 
@@ -140,10 +174,18 @@ func get_stats() -> Dictionary:
 		"queue_size": work_queue.size(),
 		"total_queued": total_items_queued,
 		"total_completed": total_items_completed,
+		"total_failed": total_items_failed,
+		"total_rejected": total_items_rejected,
 		"total_time_ms": total_time_spent_ms,
 		"chunks_loading": chunks_loading.size(),
-		"items_this_frame": items_this_frame
+		"items_this_frame": items_this_frame,
+		"queue_utilization": float(work_queue.size()) / float(GameConfig.LOADING_MAX_QUEUE_SIZE) if GameConfig.LOADING_MAX_QUEUE_SIZE > 0 else 0.0
 	}
+
+## Get recent failed items for debugging
+func get_recent_failures(count: int = 5) -> Array:
+	var start_idx = max(0, failed_items.size() - count)
+	return failed_items.slice(start_idx)
 
 ## Check if a chunk is currently being loaded
 func is_chunk_loading(chunk_key: Vector2i) -> bool:
@@ -245,10 +287,10 @@ func _execute_terrain(work_item: Dictionary) -> bool:
 	# Import generator
 	const TerrainMesh = preload("res://scripts/terrain/terrain_mesh.gd")
 
-	# Generate terrain mesh (500m chunk size)
+	# Generate terrain mesh
 	var terrain_node = TerrainMesh.create_terrain_chunk(
 		chunk_key,
-		500.0,
+		GameConfig.CHUNK_SIZE,
 		heightmap
 	)
 
@@ -714,3 +756,25 @@ func _finalize_loaded_chunks() -> void:
 	# Emit queue empty if truly empty
 	if work_queue.is_empty() and chunks_loading.is_empty():
 		queue_empty.emit()
+
+## Track a failed work item for debugging
+func _track_failed_item(work_item: Dictionary, error: String) -> void:
+	total_items_failed += 1
+
+	var failed_info = {
+		"type": work_item.get("type", "unknown"),
+		"chunk_key": work_item.get("chunk_key", Vector2i.ZERO),
+		"error": error,
+		"timestamp": Time.get_ticks_msec()
+	}
+
+	failed_items.append(failed_info)
+
+	# Trim old failures to prevent memory growth
+	while failed_items.size() > GameConfig.LOADING_MAX_FAILED_ITEMS:
+		failed_items.pop_front()
+
+	if enable_logging:
+		push_warning("[LoadingQueue] Failed: %s for chunk %s - %s" % [
+			failed_info.type, str(failed_info.chunk_key), error
+		])

@@ -212,15 +212,11 @@ func _initialize_components(osm_data: OSMDataComplete):
 	feature_factory.heightmap = heightmap_loader
 	feature_factory.road_network = road_network  # Enable batched road rendering
 
-	# 2. Create ChunkManager with factory
+	# 2. Create ChunkManager with factory (uses Config singleton for defaults)
 	chunk_manager = ChunkManager.new(feature_factory, self)
-	chunk_manager.chunk_size = 500.0
-	chunk_manager.chunk_load_radius = 750.0  # Reduced from 1000m for better FPS
-	chunk_manager.chunk_unload_radius = 1500.0  # Must be > load_radius + diagonal buffer (750 + 353 = 1103)
-	chunk_manager.chunk_update_interval = 1.0
-	chunk_manager.max_chunks_per_frame = 2
+	# Values are now initialized from Config singleton in ChunkManager._init()
 
-	print("   ⚡ Performance: Reduced load radius to 750m for better FPS")
+	print("   ⚡ Using Config: load_radius=", GameConfig.CHUNK_LOAD_RADIUS, "m, unload_radius=", GameConfig.CHUNK_UNLOAD_RADIUS, "m")
 
 	# Organize data into chunks
 	chunk_manager.organize_data(osm_data)
@@ -392,9 +388,9 @@ func _on_debug_settings_apply(load_radius: float, unload_radius: float, speed_mu
 	print("========================================")
 
 func _on_debug_settings_reset():
-	# Reset to defaults
-	chunk_manager.chunk_load_radius = 1000.0
-	chunk_manager.chunk_unload_radius = 1500.0
+	# Reset to Config defaults
+	chunk_manager.chunk_load_radius = GameConfig.CHUNK_LOAD_RADIUS
+	chunk_manager.chunk_unload_radius = GameConfig.CHUNK_UNLOAD_RADIUS
 	camera_controller.set_speeds(1.0)
 
 	# Update UI
@@ -403,9 +399,9 @@ func _on_debug_settings_reset():
 	var speed_input = debug_ui.debug_panel.find_child("SpeedInput", true, false) as LineEdit
 
 	if load_input:
-		load_input.text = "1000"
+		load_input.text = str(int(GameConfig.CHUNK_LOAD_RADIUS))
 	if unload_input:
-		unload_input.text = "1500"
+		unload_input.text = str(int(GameConfig.CHUNK_UNLOAD_RADIUS))
 	if speed_input:
 		speed_input.text = "1.0"
 

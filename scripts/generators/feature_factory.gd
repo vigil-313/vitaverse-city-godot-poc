@@ -101,7 +101,7 @@ func create_road_work_items(roads_data: Array, chunk_key: Vector2i, chunk_node: 
 
 	# Use batched rendering if road network is available
 	if road_network != null:
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 25.0  # Higher priority than individual roads
 
 		work_items.append({
@@ -113,7 +113,7 @@ func create_road_work_items(roads_data: Array, chunk_key: Vector2i, chunk_node: 
 			"tracking_array": tracking_array,
 			"heightmap": heightmap,
 			"material_library": material_library,
-			"chunk_size": 500.0,
+			"chunk_size": GameConfig.CHUNK_SIZE,
 			"priority": priority,
 			"estimated_cost_ms": 2.0,  # Batched road generation
 			"queued_time": Time.get_ticks_msec()
@@ -208,7 +208,7 @@ func create_ground_details_work_items(buildings_data: Array, roads_data: Array, 
 	# Only create one work item per chunk for all ground details
 	if buildings_data.size() > 0 or roads_data.size() > 0:
 		# Calculate chunk center for priority
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 50.0  # Higher priority than furniture
 
 		work_items.append({
@@ -233,7 +233,7 @@ func create_street_furniture_work_items(buildings_data: Array, roads_data: Array
 	# Only create one work item per chunk for all street furniture
 	if buildings_data.size() > 0 or roads_data.size() > 0:
 		# Calculate chunk center for priority
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 100.0  # Lower priority than buildings
 
 		work_items.append({
@@ -256,7 +256,7 @@ func create_terrain_work_items(chunk_key: Vector2i, chunk_node: Node, camera_pos
 	var work_items = []
 
 	# Always create terrain for each chunk
-	var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+	var chunk_center = GameConfig.get_chunk_center(chunk_key)
 	var priority = camera_pos.distance_to(chunk_center) - 200.0  # Highest priority (render terrain first)
 
 	work_items.append({
@@ -279,7 +279,7 @@ func create_vegetation_work_items(parks_data: Array, roads_data: Array, chunk_ke
 	# Only create one work item per chunk for all vegetation
 	if parks_data.size() > 0 or roads_data.size() > 0:
 		# Calculate chunk center for priority
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 150.0  # Lower priority than buildings/roads
 
 		work_items.append({
@@ -303,7 +303,7 @@ func create_lamp_work_items(chunk_key: Vector2i, chunk_node: Node, camera_pos: V
 
 	# Only create lamp work items if road network is available
 	if road_network != null:
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 175.0  # Lower priority than vegetation
 
 		work_items.append({
@@ -313,7 +313,7 @@ func create_lamp_work_items(chunk_key: Vector2i, chunk_node: Node, camera_pos: V
 			"road_network": road_network,
 			"chunk_node": chunk_node,
 			"heightmap": heightmap,
-			"chunk_size": 500.0,
+			"chunk_size": GameConfig.CHUNK_SIZE,
 			"priority": priority,
 			"estimated_cost_ms": 1.5,
 			"queued_time": Time.get_ticks_msec()
@@ -327,7 +327,7 @@ func create_street_sign_work_items(chunk_key: Vector2i, chunk_node: Node, camera
 
 	# Only create sign work items if road network is available
 	if road_network != null:
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 180.0
 
 		work_items.append({
@@ -337,7 +337,7 @@ func create_street_sign_work_items(chunk_key: Vector2i, chunk_node: Node, camera
 			"road_network": road_network,
 			"chunk_node": chunk_node,
 			"heightmap": heightmap,
-			"chunk_size": 500.0,
+			"chunk_size": GameConfig.CHUNK_SIZE,
 			"priority": priority,
 			"estimated_cost_ms": 1.0,
 			"queued_time": Time.get_ticks_msec()
@@ -350,7 +350,7 @@ func create_traffic_sign_work_items(chunk_key: Vector2i, chunk_node: Node, camer
 	var work_items = []
 
 	if road_network != null:
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 185.0
 
 		work_items.append({
@@ -360,7 +360,7 @@ func create_traffic_sign_work_items(chunk_key: Vector2i, chunk_node: Node, camer
 			"road_network": road_network,
 			"chunk_node": chunk_node,
 			"heightmap": heightmap,
-			"chunk_size": 500.0,
+			"chunk_size": GameConfig.CHUNK_SIZE,
 			"priority": priority,
 			"estimated_cost_ms": 1.5,
 			"queued_time": Time.get_ticks_msec()
@@ -373,7 +373,7 @@ func create_highway_sign_work_items(chunk_key: Vector2i, chunk_node: Node, camer
 	var work_items = []
 
 	if road_network != null:
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 190.0
 
 		work_items.append({
@@ -383,7 +383,7 @@ func create_highway_sign_work_items(chunk_key: Vector2i, chunk_node: Node, camer
 			"road_network": road_network,
 			"chunk_node": chunk_node,
 			"heightmap": heightmap,
-			"chunk_size": 500.0,
+			"chunk_size": GameConfig.CHUNK_SIZE,
 			"priority": priority,
 			"estimated_cost_ms": 1.0,
 			"queued_time": Time.get_ticks_msec()
@@ -396,7 +396,7 @@ func create_traffic_light_work_items(chunk_key: Vector2i, chunk_node: Node, came
 	var work_items = []
 
 	if road_network != null:
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 195.0
 
 		work_items.append({
@@ -406,7 +406,7 @@ func create_traffic_light_work_items(chunk_key: Vector2i, chunk_node: Node, came
 			"road_network": road_network,
 			"chunk_node": chunk_node,
 			"heightmap": heightmap,
-			"chunk_size": 500.0,
+			"chunk_size": GameConfig.CHUNK_SIZE,
 			"priority": priority,
 			"estimated_cost_ms": 1.5,
 			"queued_time": Time.get_ticks_msec()
@@ -419,7 +419,7 @@ func create_utility_pole_work_items(chunk_key: Vector2i, chunk_node: Node, camer
 	var work_items = []
 
 	if road_network != null:
-		var chunk_center = Vector2(chunk_key.x * 500.0 + 250.0, chunk_key.y * 500.0 + 250.0)
+		var chunk_center = GameConfig.get_chunk_center(chunk_key)
 		var priority = camera_pos.distance_to(chunk_center) + 200.0
 
 		work_items.append({
@@ -429,7 +429,7 @@ func create_utility_pole_work_items(chunk_key: Vector2i, chunk_node: Node, camer
 			"road_network": road_network,
 			"chunk_node": chunk_node,
 			"heightmap": heightmap,
-			"chunk_size": 500.0,
+			"chunk_size": GameConfig.CHUNK_SIZE,
 			"priority": priority,
 			"estimated_cost_ms": 1.5,
 			"queued_time": Time.get_ticks_msec()
