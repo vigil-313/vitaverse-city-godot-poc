@@ -3,9 +3,10 @@ class_name UtilityPoleGenerator
 
 ## Utility Pole Generator
 ## Creates wooden utility poles with crossarms along residential streets.
-## Uses StreetFurniturePlacer for proper road edge positioning.
+## Uses FurnitureBase for common utilities.
 
-const StreetFurniturePlacer = preload("res://scripts/generators/street_furniture/street_furniture_placer.gd")
+const FurnitureBase = preload("res://scripts/generators/street_furniture/furniture_base.gd")
+const StreetFurniturePlacer = FurnitureBase.StreetFurniturePlacer
 
 ## Pole dimensions
 const POLE_HEIGHT: float = 8.0
@@ -125,148 +126,26 @@ static func _create_utility_pole(position: Vector3, road_dir: Vector2) -> Node3D
 	return pole_assembly
 
 
-## Create tapered wooden pole
+## Create tapered wooden pole using FurnitureBase
 static func _create_pole_mesh() -> MeshInstance3D:
-	var st = SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-
-	var segments = 8
-	var height_steps = 4
-
-	for h in range(height_steps):
-		var y0 = POLE_HEIGHT * h / height_steps
-		var y1 = POLE_HEIGHT * (h + 1) / height_steps
-
-		var t0 = float(h) / height_steps
-		var t1 = float(h + 1) / height_steps
-
-		var r0 = lerp(POLE_BASE_RADIUS, POLE_TOP_RADIUS, t0)
-		var r1 = lerp(POLE_BASE_RADIUS, POLE_TOP_RADIUS, t1)
-
-		for i in range(segments):
-			var angle1 = TAU * i / segments
-			var angle2 = TAU * (i + 1) / segments
-
-			var x1_0 = cos(angle1) * r0
-			var z1_0 = sin(angle1) * r0
-			var x2_0 = cos(angle2) * r0
-			var z2_0 = sin(angle2) * r0
-
-			var x1_1 = cos(angle1) * r1
-			var z1_1 = sin(angle1) * r1
-			var x2_1 = cos(angle2) * r1
-			var z2_1 = sin(angle2) * r1
-
-			# Quad for this section
-			st.add_vertex(Vector3(x1_0, y0, z1_0))
-			st.add_vertex(Vector3(x2_0, y0, z2_0))
-			st.add_vertex(Vector3(x2_1, y1, z2_1))
-
-			st.add_vertex(Vector3(x1_0, y0, z1_0))
-			st.add_vertex(Vector3(x2_1, y1, z2_1))
-			st.add_vertex(Vector3(x1_1, y1, z1_1))
-
-	st.generate_normals()
-	var mesh = st.commit()
-
-	# Brown wood color
-	var material = StandardMaterial3D.new()
-	material.albedo_color = Color(0.35, 0.22, 0.12)  # Dark brown
-	material.roughness = 0.9
-	mesh.surface_set_material(0, material)
-
-	var instance = MeshInstance3D.new()
-	instance.mesh = mesh
-	return instance
+	return FurnitureBase.create_tapered_pole_instance(
+		POLE_BASE_RADIUS, POLE_TOP_RADIUS, POLE_HEIGHT, "wood"
+	)
 
 
-## Create horizontal crossarm
+## Create horizontal crossarm using FurnitureBase
 static func _create_crossarm_mesh() -> MeshInstance3D:
-	var st = SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-
-	var hw = CROSSARM_WIDTH / 2.0
-	var hh = CROSSARM_HEIGHT / 2.0
-	var hd = CROSSARM_DEPTH / 2.0
-
-	var verts = [
-		Vector3(-hw, -hh, -hd), Vector3(hw, -hh, -hd),
-		Vector3(hw, hh, -hd), Vector3(-hw, hh, -hd),
-		Vector3(-hw, -hh, hd), Vector3(hw, -hh, hd),
-		Vector3(hw, hh, hd), Vector3(-hw, hh, hd)
-	]
-
-	# All faces
-	_add_quad(st, verts[4], verts[5], verts[6], verts[7])  # Front
-	_add_quad(st, verts[1], verts[0], verts[3], verts[2])  # Back
-	_add_quad(st, verts[3], verts[7], verts[6], verts[2])  # Top
-	_add_quad(st, verts[0], verts[1], verts[5], verts[4])  # Bottom
-	_add_quad(st, verts[0], verts[4], verts[7], verts[3])  # Left
-	_add_quad(st, verts[5], verts[1], verts[2], verts[6])  # Right
-
-	st.generate_normals()
-	var mesh = st.commit()
-
-	var material = StandardMaterial3D.new()
-	material.albedo_color = Color(0.35, 0.22, 0.12)  # Same brown
-	material.roughness = 0.9
-	mesh.surface_set_material(0, material)
-
-	var instance = MeshInstance3D.new()
-	instance.mesh = mesh
-	return instance
+	var mesh = FurnitureBase.create_box_mesh(
+		CROSSARM_WIDTH, CROSSARM_HEIGHT, CROSSARM_DEPTH,
+		FurnitureBase.create_wood_material()
+	)
+	return FurnitureBase.mesh_to_instance(mesh)
 
 
-## Create white ceramic insulator
+## Create white ceramic insulator using FurnitureBase
 static func _create_insulator_mesh() -> MeshInstance3D:
-	var st = SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-
-	var segments = 6
-
-	# Simple cylinder for insulator
-	for i in range(segments):
-		var angle1 = TAU * i / segments
-		var angle2 = TAU * (i + 1) / segments
-
-		var x1 = cos(angle1) * INSULATOR_RADIUS
-		var z1 = sin(angle1) * INSULATOR_RADIUS
-		var x2 = cos(angle2) * INSULATOR_RADIUS
-		var z2 = sin(angle2) * INSULATOR_RADIUS
-
-		# Side
-		st.add_vertex(Vector3(x1, 0, z1))
-		st.add_vertex(Vector3(x2, 0, z2))
-		st.add_vertex(Vector3(x2, INSULATOR_HEIGHT, z2))
-
-		st.add_vertex(Vector3(x1, 0, z1))
-		st.add_vertex(Vector3(x2, INSULATOR_HEIGHT, z2))
-		st.add_vertex(Vector3(x1, INSULATOR_HEIGHT, z1))
-
-		# Top cap
-		st.add_vertex(Vector3(0, INSULATOR_HEIGHT, 0))
-		st.add_vertex(Vector3(x1, INSULATOR_HEIGHT, z1))
-		st.add_vertex(Vector3(x2, INSULATOR_HEIGHT, z2))
-
-	st.generate_normals()
-	var mesh = st.commit()
-
-	var material = StandardMaterial3D.new()
-	material.albedo_color = Color(0.9, 0.9, 0.85)  # Off-white ceramic
-	material.roughness = 0.4
-	mesh.surface_set_material(0, material)
-
-	var instance = MeshInstance3D.new()
-	instance.mesh = mesh
-	return instance
-
-
-## Helper to add a quad
-static func _add_quad(st: SurfaceTool, v0: Vector3, v1: Vector3, v2: Vector3, v3: Vector3) -> void:
-	st.add_vertex(v0)
-	st.add_vertex(v1)
-	st.add_vertex(v2)
-
-	st.add_vertex(v0)
-	st.add_vertex(v2)
-	st.add_vertex(v3)
+	var mesh = FurnitureBase.create_cylinder_mesh(
+		INSULATOR_RADIUS, INSULATOR_HEIGHT, 6,
+		FurnitureBase.create_ceramic_material()
+	)
+	return FurnitureBase.mesh_to_instance(mesh)

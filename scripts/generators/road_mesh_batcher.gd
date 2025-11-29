@@ -4,21 +4,15 @@ class_name RoadMeshBatcher
 ## Road Mesh Batcher
 ## Batches road geometry into per-chunk combined meshes for performance.
 ## Reduces draw calls from ~5,361 to ~50-100.
+##
+## Material creation delegated to RoadMaterialBuilder.
 
 const IntersectionGenerator = preload("res://scripts/generators/intersection_generator.gd")
 const TerrainPathSmoother = preload("res://scripts/terrain/terrain_path_smoother.gd")
+const RoadMaterialBuilder = preload("res://scripts/generators/road_material_builder.gd")
 
-## Material types for batching
-enum MaterialType {
-	ASPHALT,       # Main road surface
-	CONCRETE,      # Sidewalks
-	CURB,          # Curb geometry
-	MARKING_WHITE, # White lane markings
-	MARKING_YELLOW # Yellow center lines
-}
-
-## Cached materials
-static var _materials: Dictionary = {}
+## Re-export MaterialType for backward compatibility
+const MaterialType = RoadMaterialBuilder.MaterialType
 
 
 ## Generate batched road meshes for a chunk
@@ -62,8 +56,6 @@ static func create_chunk_roads(
 		_add_intersection_to_batch(intersection, batches, heightmap, chunk_center)
 
 	# Create MeshInstance3D for each material type with geometry
-	var type_names = ["Asphalt", "Concrete", "Curbs", "MarkingsWhite", "MarkingsYellow"]
-
 	for type in MaterialType.values():
 		var st: SurfaceTool = batches[type]
 
@@ -72,9 +64,9 @@ static func create_chunk_roads(
 
 		if mesh and mesh.get_surface_count() > 0:
 			var mesh_instance = MeshInstance3D.new()
-			mesh_instance.name = type_names[type]
+			mesh_instance.name = RoadMaterialBuilder.get_type_name(type)
 			mesh_instance.mesh = mesh
-			mesh_instance.material_override = _get_material(type, material_library)
+			mesh_instance.material_override = RoadMaterialBuilder.get_material(type, material_library)
 			batch_node.add_child(mesh_instance)
 
 	# Position batch at chunk center
@@ -602,46 +594,6 @@ static func _add_quad_to_st(st: SurfaceTool, p1: Vector3, p2: Vector3, p3: Vecto
 	st.add_vertex(p4)
 
 
-## Get or create material for a type
-static func _get_material(type: MaterialType, material_library = null) -> Material:
-	if _materials.has(type):
-		return _materials[type]
-
-	var material: StandardMaterial3D
-
-	match type:
-		MaterialType.ASPHALT:
-			if material_library and material_library.has_method("get_material"):
-				material = material_library.get_material("road_asphalt")
-			if not material:
-				material = StandardMaterial3D.new()
-				material.albedo_color = Color(0.25, 0.25, 0.27)
-				material.roughness = 0.9
-
-		MaterialType.CONCRETE:
-			material = StandardMaterial3D.new()
-			material.albedo_color = Color(0.5, 0.48, 0.45)  # Darker, weathered concrete
-			material.roughness = 0.85
-
-		MaterialType.CURB:
-			material = StandardMaterial3D.new()
-			material.albedo_color = Color(0.6, 0.6, 0.58)
-			material.roughness = 0.85
-
-		MaterialType.MARKING_WHITE:
-			material = StandardMaterial3D.new()
-			material.albedo_color = Color(0.95, 0.95, 0.95)
-			material.roughness = 0.5
-
-		MaterialType.MARKING_YELLOW:
-			material = StandardMaterial3D.new()
-			material.albedo_color = Color(0.95, 0.85, 0.2)
-			material.roughness = 0.5
-
-	_materials[type] = material
-	return material
-
-
-## Clear material cache (call if materials change)
+## Clear material cache (delegates to RoadMaterialBuilder)
 static func clear_material_cache() -> void:
-	_materials.clear()
+	RoadMaterialBuilder.clear_cache()

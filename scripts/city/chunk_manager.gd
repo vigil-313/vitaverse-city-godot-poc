@@ -13,6 +13,38 @@ class_name ChunkManager
 ##   - Manage chunk visualization for debugging
 
 # ========================================================================
+# CHUNK INFO CLASS
+# ========================================================================
+
+## Encapsulates all state for a single chunk
+class ChunkInfo:
+	var key: Vector2i
+	var node: Node3D
+	var state: String  # "loading" or "loaded"
+	var buildings: Array = []  # Array of {node, position}
+	var roads: Array = []  # Array of {node, path, position}
+	var load_started_ms: int = 0  # Timestamp for timeout detection
+
+	func _init(p_key: Vector2i, p_node: Node3D):
+		key = p_key
+		node = p_node
+		state = "loading"
+		load_started_ms = Time.get_ticks_msec()
+
+	func is_loaded() -> bool:
+		return state == "loaded"
+
+	func is_loading() -> bool:
+		return state == "loading"
+
+	func mark_loaded() -> void:
+		state = "loaded"
+
+	## Get time spent loading in milliseconds
+	func get_load_time_ms() -> int:
+		return Time.get_ticks_msec() - load_started_ms
+
+# ========================================================================
 # SIGNALS
 # ========================================================================
 
@@ -42,15 +74,38 @@ var road_data_by_chunk: Dictionary = {}      # Vector2i → Array[RoadData]
 var park_data_by_chunk: Dictionary = {}      # Vector2i → Array[ParkData]
 var water_data_by_chunk: Dictionary = {}     # Vector2i → Array[WaterData]
 
-# Active chunks (currently loaded)
-var active_chunks: Dictionary = {}  # Vector2i → Node3D (chunk container)
+# Consolidated chunk tracking (replaces active_chunks + chunk_states)
+var chunks: Dictionary = {}  # Vector2i → ChunkInfo
 
-# Chunk loading states (for queue-based loading)
-var chunk_states: Dictionary = {}  # Vector2i → "unloaded" | "loading" | "loaded"
+# Backward compatibility accessors (computed from chunks)
+var active_chunks: Dictionary:
+	get:
+		var result: Dictionary = {}
+		for key in chunks:
+			result[key] = chunks[key].node
+		return result
 
-# Feature tracking (for cleanup during unload)
-var buildings: Array = []  # Array of {node, position}
-var roads: Array = []      # Array of {node, path, position}
+var chunk_states: Dictionary:
+	get:
+		var result: Dictionary = {}
+		for key in chunks:
+			result[key] = chunks[key].state
+		return result
+
+# Global feature tracking (aggregated from all chunks for compatibility)
+var buildings: Array:
+	get:
+		var result: Array = []
+		for key in chunks:
+			result.append_array(chunks[key].buildings)
+		return result
+
+var roads: Array:
+	get:
+		var result: Array = []
+		for key in chunks:
+			result.append_array(chunks[key].roads)
+		return result
 
 # Streaming update timer
 var update_timer: float = 0.0
@@ -144,28 +199,24 @@ func update(delta: float, camera_pos: Vector3):
 ## Load a chunk (queue work items for gradual loading)
 func load_chunk(chunk_key: Vector2i):
 	# Check if already loaded or loading
-	var state = chunk_states.get(chunk_key, "unloaded")
-	if state == "loaded":
-		return  # Already loaded, silently skip
+	if chunks.has(chunk_key):
+		var chunk_info: ChunkInfo = chunks[chunk_key]
+		if chunk_info.is_loaded():
+			return  # Already loaded, silently skip
+		if chunk_info.is_loading():
+			print("[ChunkManager] ⚠️  DUPLICATE load_chunk(", chunk_key, ") - already loading!")
+			return
 
-	if state == "loading":
-		print("[ChunkManager] ⚠️  DUPLICATE load_chunk(", chunk_key, ") - already loading! State: ", state, ", in active_chunks: ", active_chunks.has(chunk_key))
-		# Print stack trace to see where this is being called from
-		print("   Call stack: ", get_stack())
-		return
-
-	print("[ChunkManager] ✅ Loading chunk ", chunk_key, " (state: ", state, ", active: ", active_chunks.has(chunk_key), ")")
+	print("[ChunkManager] ✅ Loading chunk ", chunk_key)
 
 	# Create chunk container immediately (lightweight)
 	var chunk_node = Node3D.new()
 	chunk_node.name = "Chunk_%d_%d" % [chunk_key.x, chunk_key.y]
 	scene_root.add_child(chunk_node)
 
-	# Store chunk reference
-	active_chunks[chunk_key] = chunk_node
-
-	# Mark as loading
-	chunk_states[chunk_key] = "loading"
+	# Create and store ChunkInfo
+	var chunk_info = ChunkInfo.new(chunk_key, chunk_node)
+	chunks[chunk_key] = chunk_info
 
 	# Get feature data
 	var buildings_in_chunk = building_data_by_chunk.get(chunk_key, [])
@@ -173,7 +224,7 @@ func load_chunk(chunk_key: Vector2i):
 	var parks_in_chunk = park_data_by_chunk.get(chunk_key, [])
 	var water_in_chunk = water_data_by_chunk.get(chunk_key, [])
 
-	# Create work items and queue them
+	# Create work items and queue them (pass chunk_info for feature tracking)
 	var work_items = feature_factory.create_work_items_for_chunk(
 		chunk_key,
 		chunk_node,
@@ -181,8 +232,8 @@ func load_chunk(chunk_key: Vector2i):
 		roads_in_chunk,
 		parks_in_chunk,
 		water_in_chunk,
-		buildings,
-		roads,
+		chunk_info.buildings,  # Track features per-chunk
+		chunk_info.roads,
 		last_camera_pos
 	)
 
@@ -201,21 +252,22 @@ func load_chunk(chunk_key: Vector2i):
 
 ## Unload a chunk (free all nodes in this chunk)
 func unload_chunk(chunk_key: Vector2i):
-	if not active_chunks.has(chunk_key):
+	if not chunks.has(chunk_key):
 		return  # Not loaded
 
+	var chunk_info: ChunkInfo = chunks[chunk_key]
+
 	# Don't unload chunks that are still loading WITH PENDING ITEMS (let them finish first)
-	var state = chunk_states.get(chunk_key, "unloaded")
 	var pending_items = loading_queue.get_pending_items_for_chunk(chunk_key)
 
-	if state == "loading" and pending_items > 0:
+	if chunk_info.is_loading() and pending_items > 0:
 		print("[ChunkManager] ⏸️  Skipping unload of chunk ", chunk_key, " - still loading (", pending_items, " items pending)")
 		return
 
 	# If state is "loading" but no pending items, force to "loaded"
-	if state == "loading" and pending_items == 0:
+	if chunk_info.is_loading() and pending_items == 0:
 		print("[ChunkManager] 🔧 Force-completing chunk ", chunk_key, " (loading finished but state stuck)")
-		chunk_states[chunk_key] = "loaded"
+		chunk_info.mark_loaded()
 		# Don't unload yet - let it stay loaded
 		return
 
@@ -226,62 +278,17 @@ func unload_chunk(chunk_key: Vector2i):
 		print("[ChunkManager]    Cancelling pending work items")
 		loading_queue.cancel_chunk(chunk_key)
 
-	var chunk_node = active_chunks[chunk_key]
-
 	# Safety check: ensure chunk_node is valid
-	if not is_instance_valid(chunk_node):
+	if not is_instance_valid(chunk_info.node):
 		push_warning("Chunk node invalid during unload: (" + str(chunk_key.x) + "," + str(chunk_key.y) + ")")
-		active_chunks.erase(chunk_key)
+		chunks.erase(chunk_key)
 		return
 
-	# Remove buildings from tracking array
-	var buildings_to_remove = []
-	for i in range(buildings.size()):
-		var building_entry = buildings[i]
-		var building_node = building_entry.get("node")
+	# Free the chunk and all its children (buildings/roads tracked in ChunkInfo are auto-cleaned)
+	chunk_info.node.queue_free()
 
-		# Null safety: check if node exists and is valid
-		if not building_node or not is_instance_valid(building_node):
-			buildings_to_remove.append(i)
-			continue
-
-		# Check if this building belongs to this chunk
-		var building_parent = building_node.get_parent()
-		if building_parent == chunk_node:
-			buildings_to_remove.append(i)
-
-	# Remove in reverse order to preserve indices
-	buildings_to_remove.reverse()
-	for i in buildings_to_remove:
-		buildings.remove_at(i)
-
-	# Remove roads from tracking array
-	var roads_to_remove = []
-	for i in range(roads.size()):
-		var road_entry = roads[i]
-		var road_node = road_entry.get("node")
-
-		# Null safety: check if node exists and is valid
-		if not road_node or not is_instance_valid(road_node):
-			roads_to_remove.append(i)
-			continue
-
-		# Check if this road belongs to this chunk
-		var road_parent = road_node.get_parent()
-		if road_parent == chunk_node:
-			roads_to_remove.append(i)
-
-	# Remove in reverse order to preserve indices
-	roads_to_remove.reverse()
-	for i in roads_to_remove:
-		roads.remove_at(i)
-
-	# Free the chunk and all its children
-	chunk_node.queue_free()
-	active_chunks.erase(chunk_key)
-
-	# Update state (keep state as "unloaded" instead of erasing to prevent immediate re-queueing)
-	chunk_states[chunk_key] = "unloaded"
+	# Remove from chunks dictionary (this also clears buildings/roads tracking)
+	chunks.erase(chunk_key)
 
 	# Emit signal
 	chunk_unloaded.emit(chunk_key)
@@ -297,11 +304,10 @@ func _update_streaming(camera_pos_2d: Vector2):
 	# Get chunks that should be loaded
 	var chunks_to_load = get_chunks_in_radius(camera_pos_2d, chunk_load_radius)
 
-	# Filter to only new chunks
+	# Filter to only new chunks (not already in chunks dictionary)
 	var new_chunks = []
 	for chunk_key in chunks_to_load:
-		var state = chunk_states.get(chunk_key, "unloaded")
-		if state == "unloaded":
+		if not chunks.has(chunk_key):
 			new_chunks.append(chunk_key)
 
 	# Sort by distance (load closest first)
@@ -324,7 +330,7 @@ func _update_streaming(camera_pos_2d: Vector2):
 
 	# Unload distant chunks
 	var chunks_to_unload = []
-	for chunk_key in active_chunks.keys():
+	for chunk_key in chunks.keys():
 		var chunk_center = Vector2(chunk_key.x * chunk_size + chunk_size/2, chunk_key.y * chunk_size + chunk_size/2)
 		var distance = camera_pos_2d.distance_to(chunk_center)
 
@@ -341,7 +347,7 @@ func _update_streaming(camera_pos_2d: Vector2):
 		chunks_unloaded += 1
 
 	# Emit stats update
-	chunks_updated.emit(active_chunks.size(), buildings.size(), roads.size())
+	chunks_updated.emit(chunks.size(), buildings.size(), roads.size())
 
 # ========================================================================
 # UTILITY FUNCTIONS
@@ -355,7 +361,7 @@ func _get_chunk_key(world_pos: Vector2) -> Vector2i:
 
 ## Get all chunk keys within radius of a position
 func get_chunks_in_radius(center_pos: Vector2, radius: float) -> Array:
-	var chunks = []
+	var result_chunks: Array = []
 	var center_chunk = _get_chunk_key(center_pos)
 	var chunk_radius = int(ceil(radius / chunk_size))
 
@@ -366,9 +372,9 @@ func get_chunks_in_radius(center_pos: Vector2, radius: float) -> Array:
 
 			# Check if chunk center is within radius
 			if center_pos.distance_to(chunk_center) <= radius + chunk_size * 0.707:  # Add diagonal
-				chunks.append(chunk_key)
+				result_chunks.append(chunk_key)
 
-	return chunks
+	return result_chunks
 
 ## Organize buildings into chunks
 func _organize_buildings_into_chunks(buildings_data: Array):
@@ -443,12 +449,22 @@ func _organize_water_into_chunks(water_data: Array):
 func get_stats() -> Dictionary:
 	var queue_stats = loading_queue.get_stats() if loading_queue else {}
 
+	# Count loading vs loaded chunks efficiently
+	var loading_count := 0
+	var loaded_count := 0
+	for key in chunks:
+		var info: ChunkInfo = chunks[key]
+		if info.is_loading():
+			loading_count += 1
+		elif info.is_loaded():
+			loaded_count += 1
+
 	return {
-		"active_chunks": active_chunks.size(),
+		"active_chunks": chunks.size(),
 		"buildings": buildings.size(),
 		"roads": roads.size(),
-		"loading_chunks": chunk_states.values().count("loading"),
-		"loaded_chunks": chunk_states.values().count("loaded"),
+		"loading_chunks": loading_count,
+		"loaded_chunks": loaded_count,
 		"queue_size": queue_stats.get("queue_size", 0),
 		"items_this_frame": queue_stats.get("items_this_frame", 0)
 	}
@@ -463,7 +479,7 @@ func _queue_distant_water(camera_pos: Vector2, extended_radius: float):
 
 	for chunk_key in distant_chunks:
 		# Skip chunks that are already fully loaded
-		if active_chunks.has(chunk_key):
+		if chunks.has(chunk_key):
 			continue
 
 		# Load ONLY large water from this distant chunk
@@ -517,8 +533,15 @@ func _calculate_polygon_area(polygon: Array) -> float:
 
 ## Called when a chunk is fully loaded (all work items completed)
 func _on_chunk_fully_loaded(chunk_key: Vector2i):
-	# Update state
-	chunk_states[chunk_key] = "loaded"
+	# Update state via ChunkInfo
+	if chunks.has(chunk_key):
+		var chunk_info: ChunkInfo = chunks[chunk_key]
+		chunk_info.mark_loaded()
+
+		# Log load time for performance tracking
+		var load_time_ms = chunk_info.get_load_time_ms()
+		if load_time_ms > 1000:  # Log slow chunks
+			print("[ChunkManager] ⚠️ Chunk ", chunk_key, " took ", load_time_ms, "ms to load")
 
 	# Get feature counts for this chunk
 	var buildings_count = building_data_by_chunk.get(chunk_key, []).size()

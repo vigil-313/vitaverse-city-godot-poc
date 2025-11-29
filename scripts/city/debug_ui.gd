@@ -6,6 +6,8 @@ class_name DebugUI
 ## Manages HUD, debug panel (F3), and chunk visualization (F4).
 ## Displays real-time stats and allows runtime configuration.
 
+const UIHelpers = preload("res://scripts/city/ui_helpers.gd")
+
 # ========================================================================
 # SIGNALS
 # ========================================================================
@@ -68,32 +70,12 @@ func _create_hud(parent: Node3D):
 	var canvas = CanvasLayer.new()
 	parent.add_child(canvas)
 
-	# Create background panel
 	var hud_panel = PanelContainer.new()
 	hud_panel.position = Vector2(10, 10)
+	hud_panel.add_theme_stylebox_override("panel", UIHelpers.create_hud_style())
 	canvas.add_child(hud_panel)
 
-	# Style the panel with translucent background
-	var style_box = StyleBoxFlat.new()
-	style_box.bg_color = Color(0, 0, 0, 0.6)  # Black with 60% opacity
-	style_box.border_color = Color(0.3, 0.3, 0.3, 0.8)
-	style_box.border_width_left = 1
-	style_box.border_width_right = 1
-	style_box.border_width_top = 1
-	style_box.border_width_bottom = 1
-	style_box.corner_radius_top_left = 4
-	style_box.corner_radius_top_right = 4
-	style_box.corner_radius_bottom_left = 4
-	style_box.corner_radius_bottom_right = 4
-	style_box.content_margin_left = 8
-	style_box.content_margin_right = 8
-	style_box.content_margin_top = 6
-	style_box.content_margin_bottom = 6
-	hud_panel.add_theme_stylebox_override("panel", style_box)
-
-	hud_label = Label.new()
-	hud_label.add_theme_font_size_override("font_size", 12)  # Smaller font
-	hud_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))  # Light gray instead of yellow
+	hud_label = UIHelpers.create_label("", 12, Color(0.9, 0.9, 0.9))
 	hud_panel.add_child(hud_label)
 
 	print("📊 HUD created")
@@ -167,258 +149,93 @@ func _create_debug_panel(parent: Node3D):
 	debug_panel.position = Vector2(-10, 10)
 	debug_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	debug_panel.visible = false
+	debug_panel.add_theme_stylebox_override("panel", UIHelpers.create_panel_style())
 	canvas.add_child(debug_panel)
-
-	# Style the panel
-	var style_box = StyleBoxFlat.new()
-	style_box.bg_color = Color(0.1, 0.1, 0.1, 0.85)
-	style_box.border_color = Color(0.3, 0.3, 0.3, 0.9)
-	style_box.border_width_left = 2
-	style_box.border_width_right = 2
-	style_box.border_width_top = 2
-	style_box.border_width_bottom = 2
-	style_box.corner_radius_top_left = 6
-	style_box.corner_radius_top_right = 6
-	style_box.corner_radius_bottom_left = 6
-	style_box.corner_radius_bottom_right = 6
-	style_box.content_margin_left = 10
-	style_box.content_margin_right = 10
-	style_box.content_margin_top = 8
-	style_box.content_margin_bottom = 8
-	debug_panel.add_theme_stylebox_override("panel", style_box)
 
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 4)
 	debug_panel.add_child(vbox)
 
 	# Title
-	var title = Label.new()
-	title.text = "DEBUG (F3)"
-	title.add_theme_font_size_override("font_size", 11)
-	title.add_theme_color_override("font_color", Color(1, 0.9, 0.3))
-	vbox.add_child(title)
-
-	# Helper to create collapsible section
-	var create_collapsible_section = func(section_title: String, container: VBoxContainer):
-		var section_vbox = VBoxContainer.new()
-		section_vbox.add_theme_constant_override("separation", 2)
-		container.add_child(section_vbox)
-
-		var header_hbox = HBoxContainer.new()
-		section_vbox.add_child(header_hbox)
-
-		var collapse_btn = Button.new()
-		collapse_btn.text = "▼"
-		collapse_btn.custom_minimum_size = Vector2(18, 18)
-		collapse_btn.add_theme_font_size_override("font_size", 8)
-		header_hbox.add_child(collapse_btn)
-
-		var section_label = Label.new()
-		section_label.text = section_title
-		section_label.add_theme_font_size_override("font_size", 9)
-		section_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
-		header_hbox.add_child(section_label)
-
-		var content_vbox = VBoxContainer.new()
-		content_vbox.add_theme_constant_override("separation", 2)
-		content_vbox.name = section_title.replace(" ", "") + "Content"
-		section_vbox.add_child(content_vbox)
-
-		collapse_btn.pressed.connect(func():
-			content_vbox.visible = !content_vbox.visible
-			collapse_btn.text = "▶" if !content_vbox.visible else "▼"
-		)
-
-		return content_vbox
+	vbox.add_child(UIHelpers.create_label("DEBUG (F3)", 11, Color(1, 0.9, 0.3)))
 
 	# === MOVEMENT SPEED SECTION ===
-	var speed_content = create_collapsible_section.call("Movement Speed", vbox)
-	speed_content.visible = false  # Start collapsed
-
-	var speed_hbox = HBoxContainer.new()
-	speed_content.add_child(speed_hbox)
-
-	var speed_label = Label.new()
-	speed_label.text = "Multiplier:"
-	speed_label.custom_minimum_size = Vector2(60, 0)
-	speed_label.add_theme_font_size_override("font_size", 8)
-	speed_hbox.add_child(speed_label)
-
-	var speed_input = LineEdit.new()
-	speed_input.text = "1.0"
-	speed_input.custom_minimum_size = Vector2(40, 16)
-	speed_input.name = "SpeedInput"
-	speed_input.add_theme_font_size_override("font_size", 8)
-	speed_hbox.add_child(speed_input)
-
-	var speeds_label = Label.new()
-	speeds_label.text = "Normal: 20 | Fast: 100"
+	var speed_content = UIHelpers.create_collapsible_section("Movement Speed", vbox, true)
+	speed_content.add_child(UIHelpers.create_labeled_input("Multiplier:", "SpeedInput", "1.0", 60))
+	var speeds_label = UIHelpers.create_label("Normal: 20 | Fast: 100", 7, Color(0.6, 0.6, 0.6))
 	speeds_label.name = "SpeedsLabel"
-	speeds_label.add_theme_font_size_override("font_size", 7)
-	speeds_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	speed_content.add_child(speeds_label)
 
 	# === CHUNK STREAMING SECTION ===
-	var chunk_content = create_collapsible_section.call("Chunk Streaming", vbox)
-	chunk_content.visible = false  # Start collapsed
-
-	# Load Radius
-	var load_hbox = HBoxContainer.new()
-	chunk_content.add_child(load_hbox)
-
-	var load_label = Label.new()
-	load_label.text = "Load (m):"
-	load_label.custom_minimum_size = Vector2(55, 0)
-	load_label.add_theme_font_size_override("font_size", 8)
-	load_hbox.add_child(load_label)
-
-	var load_input = LineEdit.new()
-	load_input.text = "1000"
-	load_input.custom_minimum_size = Vector2(45, 16)
-	load_input.name = "LoadInput"
-	load_input.add_theme_font_size_override("font_size", 8)
-	load_hbox.add_child(load_input)
-
-	# Unload Radius
-	var unload_hbox = HBoxContainer.new()
-	chunk_content.add_child(unload_hbox)
-
-	var unload_label = Label.new()
-	unload_label.text = "Unload (m):"
-	unload_label.custom_minimum_size = Vector2(55, 0)
-	unload_label.add_theme_font_size_override("font_size", 8)
-	unload_hbox.add_child(unload_label)
-
-	var unload_input = LineEdit.new()
-	unload_input.text = "1500"
-	unload_input.custom_minimum_size = Vector2(45, 16)
-	unload_input.name = "UnloadInput"
-	unload_input.add_theme_font_size_override("font_size", 8)
-	unload_hbox.add_child(unload_input)
+	var chunk_content = UIHelpers.create_collapsible_section("Chunk Streaming", vbox, true)
+	chunk_content.add_child(UIHelpers.create_labeled_input("Load (m):", "LoadInput", "1000"))
+	chunk_content.add_child(UIHelpers.create_labeled_input("Unload (m):", "UnloadInput", "1500"))
 
 	# === INTERIOR LIGHTING SECTION ===
-	var lighting_content = create_collapsible_section.call("Interior Lighting", vbox)
+	var lighting_content = UIHelpers.create_collapsible_section("Interior Lighting", vbox, false)
+	_build_lighting_controls(lighting_content)
 
-	# Helper for slider + input pairs
-	var create_slider_input = func(parent: VBoxContainer, label_text: String, min_val: float, max_val: float, default_val: float, input_name: String, slider_name: String):
-		var row_vbox = VBoxContainer.new()
-		row_vbox.add_theme_constant_override("separation", 1)
-		parent.add_child(row_vbox)
+	# Settings buttons
+	var settings_btn_hbox = HBoxContainer.new()
+	settings_btn_hbox.add_theme_constant_override("separation", 3)
+	vbox.add_child(settings_btn_hbox)
 
-		var label_hbox = HBoxContainer.new()
-		row_vbox.add_child(label_hbox)
+	var apply_btn = UIHelpers.create_button("Apply Settings")
+	apply_btn.pressed.connect(_on_apply_pressed)
+	settings_btn_hbox.add_child(apply_btn)
 
-		var label = Label.new()
-		label.text = label_text
-		label.add_theme_font_size_override("font_size", 7)
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label_hbox.add_child(label)
+	var reset_btn = UIHelpers.create_button("Reset")
+	reset_btn.pressed.connect(_on_reset_pressed)
+	settings_btn_hbox.add_child(reset_btn)
 
-		var input = LineEdit.new()
-		input.text = str(default_val)
-		input.custom_minimum_size = Vector2(35, 14)
-		input.name = input_name
-		input.add_theme_font_size_override("font_size", 7)
-		label_hbox.add_child(input)
+	# Status and stats labels
+	var status_label = UIHelpers.create_label("", 7, Color(0.3, 1, 0.3))
+	status_label.name = "StatusLabel"
+	vbox.add_child(status_label)
 
-		var slider = HSlider.new()
-		slider.min_value = min_val
-		slider.max_value = max_val
-		slider.value = default_val
-		slider.step = (max_val - min_val) / 100.0
-		slider.custom_minimum_size = Vector2(0, 12)
-		slider.name = slider_name
-		row_vbox.add_child(slider)
+	var stats_label = UIHelpers.create_label("", 7, Color(0.7, 0.7, 0.7))
+	stats_label.name = "StatsLabel"
+	vbox.add_child(stats_label)
 
-		# Sync slider and input
-		slider.value_changed.connect(func(val): input.text = "%.2f" % val)
-		input.text_changed.connect(func(text):
-			var val = text.to_float()
-			if val >= min_val and val <= max_val:
-				slider.value = val
-		)
-
+## Build the interior lighting controls subsection
+func _build_lighting_controls(parent: VBoxContainer):
 	# Light Color
-	create_slider_input.call(lighting_content, "Color R", 0.0, 1.0, 1.0, "ColorR", "ColorRSlider")
-	create_slider_input.call(lighting_content, "Color G", 0.0, 1.0, 0.95, "ColorG", "ColorGSlider")
-	create_slider_input.call(lighting_content, "Color B", 0.0, 1.0, 0.85, "ColorB", "ColorBSlider")
+	UIHelpers.create_slider_input(parent, "Color R", 0.0, 1.0, 1.0, "ColorR", "ColorRSlider")
+	UIHelpers.create_slider_input(parent, "Color G", 0.0, 1.0, 0.95, "ColorG", "ColorGSlider")
+	UIHelpers.create_slider_input(parent, "Color B", 0.0, 1.0, 0.85, "ColorB", "ColorBSlider")
 
 	# Light Energy & Range
-	create_slider_input.call(lighting_content, "Energy", 0.1, 50.0, 10.0, "LightEnergy", "EnergySlider")
-	create_slider_input.call(lighting_content, "Range (m)", 5.0, 100.0, 40.0, "LightRange", "RangeSlider")
+	UIHelpers.create_slider_input(parent, "Energy", 0.1, 50.0, 10.0, "LightEnergy", "EnergySlider")
+	UIHelpers.create_slider_input(parent, "Range (m)", 5.0, 100.0, 40.0, "LightRange", "RangeSlider")
 
 	# Shadows checkbox
 	var shadow_hbox = HBoxContainer.new()
-	lighting_content.add_child(shadow_hbox)
+	parent.add_child(shadow_hbox)
 	var shadow_check = CheckBox.new()
 	shadow_check.button_pressed = true
 	shadow_check.name = "ShadowsEnabled"
 	shadow_check.custom_minimum_size = Vector2(14, 14)
 	shadow_hbox.add_child(shadow_check)
-	var shadow_label = Label.new()
-	shadow_label.text = "Shadows"
-	shadow_label.add_theme_font_size_override("font_size", 7)
-	shadow_hbox.add_child(shadow_label)
+	shadow_hbox.add_child(UIHelpers.create_label("Shadows", 7))
 
 	# Shadow parameters
-	create_slider_input.call(lighting_content, "Shadow Opacity", 0.0, 1.0, 1.0, "ShadowOpacity", "ShadowOpacitySlider")
-	create_slider_input.call(lighting_content, "Shadow Bias", 0.0, 2.0, 0.1, "ShadowBias", "ShadowBiasSlider")
-	create_slider_input.call(lighting_content, "Shadow Normal", 0.0, 10.0, 2.0, "ShadowNormalBias", "ShadowNormalSlider")
-	create_slider_input.call(lighting_content, "Shadow Blur", 0.0, 5.0, 1.5, "ShadowBlur", "ShadowBlurSlider")
+	UIHelpers.create_slider_input(parent, "Shadow Opacity", 0.0, 1.0, 1.0, "ShadowOpacity", "ShadowOpacitySlider")
+	UIHelpers.create_slider_input(parent, "Shadow Bias", 0.0, 2.0, 0.1, "ShadowBias", "ShadowBiasSlider")
+	UIHelpers.create_slider_input(parent, "Shadow Normal", 0.0, 10.0, 2.0, "ShadowNormalBias", "ShadowNormalSlider")
+	UIHelpers.create_slider_input(parent, "Shadow Blur", 0.0, 5.0, 1.5, "ShadowBlur", "ShadowBlurSlider")
 
 	# Buttons
 	var btn_hbox = HBoxContainer.new()
 	btn_hbox.add_theme_constant_override("separation", 3)
-	lighting_content.add_child(btn_hbox)
+	parent.add_child(btn_hbox)
 
-	var apply_btn = Button.new()
-	apply_btn.text = "Apply"
-	apply_btn.add_theme_font_size_override("font_size", 7)
-	apply_btn.custom_minimum_size = Vector2(0, 18)
+	var apply_btn = UIHelpers.create_button("Apply")
 	apply_btn.pressed.connect(_on_apply_lighting_pressed)
 	btn_hbox.add_child(apply_btn)
 
-	var save_btn = Button.new()
-	save_btn.text = "Save"
-	save_btn.add_theme_font_size_override("font_size", 7)
-	save_btn.custom_minimum_size = Vector2(0, 18)
+	var save_btn = UIHelpers.create_button("Save")
 	save_btn.pressed.connect(_on_save_lighting_config)
 	btn_hbox.add_child(save_btn)
-
-	# Add apply/reset buttons for speed/chunk settings
-	var settings_btn_hbox = HBoxContainer.new()
-	settings_btn_hbox.add_theme_constant_override("separation", 3)
-	vbox.add_child(settings_btn_hbox)
-
-	var apply_settings_btn = Button.new()
-	apply_settings_btn.text = "Apply Settings"
-	apply_settings_btn.add_theme_font_size_override("font_size", 7)
-	apply_settings_btn.custom_minimum_size = Vector2(0, 18)
-	apply_settings_btn.pressed.connect(_on_apply_pressed)
-	settings_btn_hbox.add_child(apply_settings_btn)
-
-	var reset_btn = Button.new()
-	reset_btn.text = "Reset"
-	reset_btn.add_theme_font_size_override("font_size", 7)
-	reset_btn.custom_minimum_size = Vector2(0, 18)
-	reset_btn.pressed.connect(_on_reset_pressed)
-	settings_btn_hbox.add_child(reset_btn)
-
-	# Status
-	var status_label = Label.new()
-	status_label.text = ""
-	status_label.name = "StatusLabel"
-	status_label.add_theme_font_size_override("font_size", 7)
-	status_label.add_theme_color_override("font_color", Color(0.3, 1, 0.3))
-	vbox.add_child(status_label)
-
-	# Stats
-	var stats_label = Label.new()
-	stats_label.text = ""
-	stats_label.name = "StatsLabel"
-	stats_label.add_theme_font_size_override("font_size", 7)
-	stats_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	vbox.add_child(stats_label)
 
 func _on_apply_pressed():
 	var load_input = debug_panel.find_child("LoadInput", true, false) as LineEdit

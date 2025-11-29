@@ -14,6 +14,26 @@ class_name LoadingQueue
 ##   queue.process(delta)
 
 # ========================================================================
+# GENERATOR PRELOADS (loaded once, shared by all executors)
+# ========================================================================
+
+const TerrainMesh = preload("res://scripts/terrain/terrain_mesh.gd")
+const BuildingOrchestrator = preload("res://scripts/generators/building/building_orchestrator.gd")
+const RoadGenerator = preload("res://scripts/generators/road_generator.gd")
+const RoadMeshBatcher = preload("res://scripts/generators/road_mesh_batcher.gd")
+const ParkGenerator = preload("res://scripts/generators/park_generator.gd")
+const WaterGenerator = preload("res://scripts/generators/water_generator.gd")
+const GroundDetailsSystem = preload("res://scripts/generators/ground_details/ground_details_system.gd")
+const StreetFurnitureSystem = preload("res://scripts/generators/street_furniture/street_furniture_system.gd")
+const VegetationSystem = preload("res://scripts/generators/vegetation/vegetation_system.gd")
+const StreetLampPlacer = preload("res://scripts/generators/street_furniture/street_lamp_placer.gd")
+const StreetSignGenerator = preload("res://scripts/generators/street_furniture/street_sign_generator.gd")
+const TrafficSignGenerator = preload("res://scripts/generators/street_furniture/traffic_sign_generator.gd")
+const HighwaySignGenerator = preload("res://scripts/generators/street_furniture/highway_sign_generator.gd")
+const TrafficLightGenerator = preload("res://scripts/generators/street_furniture/traffic_light_generator.gd")
+const UtilityPoleGenerator = preload("res://scripts/generators/street_furniture/utility_pole_generator.gd")
+
+# ========================================================================
 # SIGNALS
 # ========================================================================
 
@@ -230,234 +250,188 @@ func _sort_queue() -> void:
 		return priority_a < priority_b
 	)
 
-## Execute a single work item
-func _execute_work_item(work_item: Dictionary) -> bool:
-	var type = work_item.type
-	var success = false
-
-	match type:
-		"terrain":
-			success = _execute_terrain(work_item)
-		"building":
-			success = _execute_building(work_item)
-		"road":
-			success = _execute_road(work_item)
-		"road_batch":
-			success = _execute_road_batch(work_item)
-		"park":
-			success = _execute_park(work_item)
-		"water":
-			success = _execute_water(work_item)
-		"distant_water":
-			success = _execute_distant_water(work_item)
-		"street_furniture":
-			success = _execute_street_furniture(work_item)
-		"ground_details":
-			success = _execute_ground_details(work_item)
-		"vegetation":
-			success = _execute_vegetation(work_item)
-		"lamp_batch":
-			success = _execute_lamp_batch(work_item)
-		"street_signs":
-			success = _execute_street_signs(work_item)
-		"traffic_signs":
-			success = _execute_traffic_signs(work_item)
-		"highway_signs":
-			success = _execute_highway_signs(work_item)
-		"traffic_lights":
-			success = _execute_traffic_lights(work_item)
-		"utility_poles":
-			success = _execute_utility_poles(work_item)
-		_:
-			push_warning("[LoadingQueue] Unknown work item type: " + type)
-			return false
-
-	return success
-
-## Execute terrain mesh creation
-func _execute_terrain(work_item: Dictionary) -> bool:
-	var chunk_key = work_item.get("chunk_key")
-	var chunk_node = work_item.get("chunk_node")
-	var heightmap = work_item.get("heightmap")
-
-	if not chunk_node:
-		push_warning("[LoadingQueue] Invalid terrain work item - no chunk_node")
-		return false
-
-	# Import generator
-	const TerrainMesh = preload("res://scripts/terrain/terrain_mesh.gd")
-
-	# Generate terrain mesh
-	var terrain_node = TerrainMesh.create_terrain_chunk(
-		chunk_key,
-		GameConfig.CHUNK_SIZE,
-		heightmap
-	)
-
-	if terrain_node:
-		chunk_node.add_child(terrain_node)
-
-	work_item["created_node"] = terrain_node
-
-	return terrain_node != null
-
 ## Debug counter for building placement
 var _debug_building_count: int = 0
 
-## Execute building creation
-func _execute_building(work_item: Dictionary) -> bool:
-	var building_data = work_item.get("data")
-	var chunk_node = work_item.get("chunk_node")
-	var tracking_array = work_item.get("tracking_array")
-	var heightmap = work_item.get("heightmap")
+## Execute a single work item using type-specific handlers
+func _execute_work_item(work_item: Dictionary) -> bool:
+	var work_type = work_item.type
 
-	if not building_data or not chunk_node:
+	match work_type:
+		"terrain":
+			return _exec_terrain(work_item)
+		"building":
+			return _exec_building(work_item)
+		"road":
+			return _exec_road(work_item)
+		"road_batch":
+			return _exec_road_batch(work_item)
+		"park":
+			return _exec_park(work_item)
+		"water":
+			return _exec_water(work_item)
+		"distant_water":
+			return _exec_distant_water(work_item)
+		"street_furniture":
+			return _exec_street_furniture(work_item)
+		"ground_details":
+			return _exec_ground_details(work_item)
+		"vegetation":
+			return _exec_vegetation(work_item)
+		"lamp_batch":
+			return _exec_lamp_batch(work_item)
+		"street_signs":
+			return _exec_road_furniture(work_item, StreetSignGenerator, "create_chunk_signs")
+		"traffic_signs":
+			return _exec_road_furniture(work_item, TrafficSignGenerator, "create_chunk_signs")
+		"highway_signs":
+			return _exec_road_furniture(work_item, HighwaySignGenerator, "create_chunk_signs")
+		"traffic_lights":
+			return _exec_road_furniture(work_item, TrafficLightGenerator, "create_chunk_lights")
+		"utility_poles":
+			return _exec_road_furniture(work_item, UtilityPoleGenerator, "create_chunk_poles")
+		_:
+			push_warning("[LoadingQueue] Unknown work item type: " + work_type)
+			return false
+
+# ========================================================================
+# WORK ITEM EXECUTORS (consolidated patterns)
+# ========================================================================
+
+## Validate common required fields
+func _validate_chunk_node(work_item: Dictionary, work_type: String) -> bool:
+	if not work_item.get("chunk_node"):
+		push_warning("[LoadingQueue] Invalid %s work item - no chunk_node" % work_type)
+		return false
+	return true
+
+func _validate_road_network(work_item: Dictionary, work_type: String) -> bool:
+	if not work_item.get("road_network") or not work_item.get("chunk_node"):
+		push_warning("[LoadingQueue] Invalid %s work item" % work_type)
+		return false
+	return true
+
+## Execute terrain mesh creation
+func _exec_terrain(work_item: Dictionary) -> bool:
+	if not _validate_chunk_node(work_item, "terrain"):
+		return false
+
+	var terrain_node = TerrainMesh.create_terrain_chunk(
+		work_item.chunk_key,
+		GameConfig.CHUNK_SIZE,
+		work_item.get("heightmap")
+	)
+
+	if terrain_node:
+		work_item.chunk_node.add_child(terrain_node)
+	work_item["created_node"] = terrain_node
+	return terrain_node != null
+
+## Execute building creation
+func _exec_building(work_item: Dictionary) -> bool:
+	var building_data = work_item.get("data")
+	if not building_data or not work_item.get("chunk_node"):
 		push_warning("[LoadingQueue] Invalid building work item")
 		return false
 
-	# Import generator
-	const BuildingOrchestrator = preload("res://scripts/generators/building/building_orchestrator.gd")
-
-	# Generate building
 	var center = building_data.get("center", Vector2.ZERO)
-	var building_node = BuildingOrchestrator.create_building(building_data, chunk_node, true)
+	var building_node = BuildingOrchestrator.create_building(building_data, work_item.chunk_node, true)
 
 	if building_node:
-		# Get terrain elevation at building center
 		var ground_elevation = 0.0
+		var heightmap = work_item.get("heightmap")
 		if heightmap:
 			ground_elevation = heightmap.get_elevation(center.x, -center.y)
-		else:
-			push_warning("[LoadingQueue] WARNING: heightmap is null for building!")
 
-		# Debug: Print first few buildings
 		_debug_building_count += 1
 		if _debug_building_count <= 5:
-			print("[LoadingQueue] Building #", _debug_building_count, " at OSM (", "%.1f" % center.x, ", ", "%.1f" % center.y, ") -> Y=", "%.2f" % ground_elevation)
+			print("[LoadingQueue] Building #", _debug_building_count, " at (", "%.1f" % center.x, ", ", "%.1f" % center.y, ") Y=", "%.2f" % ground_elevation)
 
 		building_node.position = Vector3(center.x, ground_elevation, -center.y)
 
-		# Track for cleanup during chunk unload
-		tracking_array.append({
-			"node": building_node,
-			"position": building_node.position
-		})
+		var tracking_array = work_item.get("tracking_array")
+		if tracking_array:
+			tracking_array.append({"node": building_node, "position": building_node.position})
 
-	# Store created node for signal
 	work_item["created_node"] = building_node
-
 	return building_node != null
 
 ## Execute road creation
-func _execute_road(work_item: Dictionary) -> bool:
+func _exec_road(work_item: Dictionary) -> bool:
 	var road_data = work_item.get("data")
-	var chunk_node = work_item.get("chunk_node")
-	var tracking_array = work_item.get("tracking_array")
-	var heightmap = work_item.get("heightmap")
-
-	if not road_data or not chunk_node:
+	if not road_data or not work_item.get("chunk_node"):
 		push_warning("[LoadingQueue] Invalid road work item")
 		return false
 
-	# Import generator
-	const RoadGenerator = preload("res://scripts/generators/road_generator.gd")
-
-	# Generate road with elevation data
-	var path = road_data.get("path", [])
-	var road_node = RoadGenerator.create_road(path, road_data, chunk_node, tracking_array, heightmap)
+	var road_node = RoadGenerator.create_road(
+		road_data.get("path", []),
+		road_data,
+		work_item.chunk_node,
+		work_item.get("tracking_array"),
+		work_item.get("heightmap")
+	)
 
 	work_item["created_node"] = road_node
-
 	return road_node != null
 
-## Execute batched road creation (new road system)
-func _execute_road_batch(work_item: Dictionary) -> bool:
-	var road_network = work_item.get("road_network")
-	var chunk_key = work_item.get("chunk_key")
-	var chunk_node = work_item.get("chunk_node")
-	var tracking_array = work_item.get("tracking_array")
-	var heightmap = work_item.get("heightmap")
-	var material_library = work_item.get("material_library")
-	var chunk_size = work_item.get("chunk_size", 500.0)
-
-	if not road_network or not chunk_node:
-		push_warning("[LoadingQueue] Invalid road_batch work item")
+## Execute batched road creation
+func _exec_road_batch(work_item: Dictionary) -> bool:
+	if not _validate_road_network(work_item, "road_batch"):
 		return false
 
-	# Import generator
-	const RoadMeshBatcher = preload("res://scripts/generators/road_mesh_batcher.gd")
-
-	# Generate batched road mesh for this chunk
 	var batch_node = RoadMeshBatcher.create_chunk_roads(
-		road_network,
-		chunk_key,
-		chunk_size,
-		heightmap,
-		material_library
+		work_item.road_network,
+		work_item.chunk_key,
+		work_item.get("chunk_size", GameConfig.CHUNK_SIZE),
+		work_item.get("heightmap"),
+		work_item.get("material_library")
 	)
 
 	if batch_node:
-		chunk_node.add_child(batch_node)
-
-		# Track for cleanup
+		work_item.chunk_node.add_child(batch_node)
+		var tracking_array = work_item.get("tracking_array")
 		if tracking_array:
-			tracking_array.append({
-				"node": batch_node,
-				"position": batch_node.position
-			})
+			tracking_array.append({"node": batch_node, "position": batch_node.position})
 
 	work_item["created_node"] = batch_node
-
 	return batch_node != null
 
 ## Execute park creation
-func _execute_park(work_item: Dictionary) -> bool:
+func _exec_park(work_item: Dictionary) -> bool:
 	var park_data = work_item.get("data")
-	var chunk_node = work_item.get("chunk_node")
-	var heightmap = work_item.get("heightmap")
-
-	if not park_data or not chunk_node:
+	if not park_data or not work_item.get("chunk_node"):
 		push_warning("[LoadingQueue] Invalid park work item")
 		return false
 
-	# Import generator
-	const ParkGenerator = preload("res://scripts/generators/park_generator.gd")
-
-	# Generate park with elevation
-	var footprint = park_data.get("footprint", [])
-	var park_node = ParkGenerator.create_park(footprint, park_data, chunk_node, heightmap)
+	var park_node = ParkGenerator.create_park(
+		park_data.get("footprint", []),
+		park_data,
+		work_item.chunk_node,
+		work_item.get("heightmap")
+	)
 
 	work_item["created_node"] = park_node
-
 	return park_node != null
 
 ## Execute water creation
-func _execute_water(work_item: Dictionary) -> bool:
+func _exec_water(work_item: Dictionary) -> bool:
 	var water_data = work_item.get("data")
-	var chunk_node = work_item.get("chunk_node")
-	var heightmap = work_item.get("heightmap")
-
-	if not water_data or not chunk_node:
+	if not water_data or not work_item.get("chunk_node"):
 		push_warning("[LoadingQueue] Invalid water work item")
 		return false
 
-	# Import generator
-	const WaterGenerator = preload("res://scripts/generators/water_generator.gd")
-
-	# Generate water (uses fixed water level from heightmap)
 	var water_node = WaterGenerator.create_water(
 		water_data.get("footprint", []),
 		water_data,
-		chunk_node,
-		heightmap
+		work_item.chunk_node,
+		work_item.get("heightmap")
 	)
 
 	work_item["created_node"] = water_node
-
 	return water_node != null
 
 ## Execute distant water creation
-func _execute_distant_water(work_item: Dictionary) -> bool:
+func _exec_distant_water(work_item: Dictionary) -> bool:
 	var water_data = work_item.get("data")
 	var scene_root = work_item.get("scene_root")
 	var water_id = work_item.get("id", "")
@@ -466,261 +440,94 @@ func _execute_distant_water(work_item: Dictionary) -> bool:
 		push_warning("[LoadingQueue] Invalid distant water work item")
 		return false
 
-	# Check if already exists (prevent duplicates)
 	if scene_root.has_node(NodePath(water_id)):
-		return true  # Already loaded, skip
+		return true  # Already loaded
 
-	# Import generator
-	const WaterGenerator = preload("res://scripts/generators/water_generator.gd")
-
-	# Generate water
 	var water_node = WaterGenerator.create_water(
 		water_data.get("footprint", []),
 		water_data,
 		scene_root
 	)
 
-	# Set the correct name for duplicate detection
 	if water_node and water_id:
 		water_node.name = water_id
 
 	work_item["created_node"] = water_node
-
 	return water_node != null
 
 ## Execute ground details creation
-func _execute_ground_details(work_item: Dictionary) -> bool:
-	var buildings_data = work_item.get("buildings_data", [])
-	var roads_data = work_item.get("roads_data", [])
-	var chunk_node = work_item.get("chunk_node")
-	var chunk_key = work_item.get("chunk_key")
-	var heightmap = work_item.get("heightmap")
-
-	if not chunk_node:
-		push_warning("[LoadingQueue] Invalid ground details work item")
+func _exec_ground_details(work_item: Dictionary) -> bool:
+	if not _validate_chunk_node(work_item, "ground_details"):
 		return false
 
-	# Import generator
-	const GroundDetailsSystem = preload("res://scripts/generators/ground_details/ground_details_system.gd")
-
-	# Generate ground details with elevation
 	GroundDetailsSystem.generate_ground_details_for_chunk(
-		buildings_data,
-		roads_data,
-		chunk_node,
-		chunk_key,
-		heightmap
+		work_item.get("buildings_data", []),
+		work_item.get("roads_data", []),
+		work_item.chunk_node,
+		work_item.chunk_key,
+		work_item.get("heightmap")
 	)
-
 	return true
 
 ## Execute street furniture creation
-func _execute_street_furniture(work_item: Dictionary) -> bool:
-	var buildings_data = work_item.get("buildings_data", [])
-	var roads_data = work_item.get("roads_data", [])
-	var chunk_node = work_item.get("chunk_node")
-	var chunk_key = work_item.get("chunk_key")
-	var heightmap = work_item.get("heightmap")
-
-	if not chunk_node:
-		push_warning("[LoadingQueue] Invalid street furniture work item")
+func _exec_street_furniture(work_item: Dictionary) -> bool:
+	if not _validate_chunk_node(work_item, "street_furniture"):
 		return false
 
-	# Import generator
-	const StreetFurnitureSystem = preload("res://scripts/generators/street_furniture/street_furniture_system.gd")
-
-	# Generate street furniture with elevation
 	StreetFurnitureSystem.generate_furniture_for_chunk(
-		buildings_data,
-		roads_data,
-		chunk_node,
-		chunk_key,
-		heightmap
+		work_item.get("buildings_data", []),
+		work_item.get("roads_data", []),
+		work_item.chunk_node,
+		work_item.chunk_key,
+		work_item.get("heightmap")
 	)
-
 	return true
 
 ## Execute vegetation creation
-func _execute_vegetation(work_item: Dictionary) -> bool:
-	var parks_data = work_item.get("parks_data", [])
-	var roads_data = work_item.get("roads_data", [])
-	var chunk_node = work_item.get("chunk_node")
-	var chunk_key = work_item.get("chunk_key")
-	var heightmap = work_item.get("heightmap")
-
-	if not chunk_node:
-		push_warning("[LoadingQueue] Invalid vegetation work item")
+func _exec_vegetation(work_item: Dictionary) -> bool:
+	if not _validate_chunk_node(work_item, "vegetation"):
 		return false
 
-	# Import generator
-	const VegetationSystem = preload("res://scripts/generators/vegetation/vegetation_system.gd")
-
-	# Generate vegetation (trees in parks and along streets)
 	VegetationSystem.generate_vegetation_for_chunk(
-		parks_data,
-		roads_data,
-		chunk_node,
-		chunk_key,
-		heightmap
+		work_item.get("parks_data", []),
+		work_item.get("roads_data", []),
+		work_item.chunk_node,
+		work_item.chunk_key,
+		work_item.get("heightmap")
 	)
-
 	return true
 
-## Execute batched lamp creation (new lamp placement system)
-func _execute_lamp_batch(work_item: Dictionary) -> bool:
-	var road_network = work_item.get("road_network")
-	var chunk_key = work_item.get("chunk_key")
-	var chunk_node = work_item.get("chunk_node")
-	var heightmap = work_item.get("heightmap")
-	var chunk_size = work_item.get("chunk_size", 500.0)
-
-	if not road_network or not chunk_node:
-		push_warning("[LoadingQueue] Invalid lamp_batch work item")
+## Execute batched lamp creation
+func _exec_lamp_batch(work_item: Dictionary) -> bool:
+	if not _validate_road_network(work_item, "lamp_batch"):
 		return false
 
-	# Import generator
-	const StreetLampPlacer = preload("res://scripts/generators/street_furniture/street_lamp_placer.gd")
-
-	# Generate batched lamp mesh for this chunk
 	var lamp_node = StreetLampPlacer.create_chunk_lamps(
-		road_network,
-		chunk_key,
-		chunk_size,
-		heightmap,
-		chunk_node
+		work_item.road_network,
+		work_item.chunk_key,
+		work_item.get("chunk_size", GameConfig.CHUNK_SIZE),
+		work_item.get("heightmap"),
+		work_item.chunk_node
 	)
 
 	work_item["created_node"] = lamp_node
-
 	return lamp_node != null
 
-## Execute street sign creation
-func _execute_street_signs(work_item: Dictionary) -> bool:
-	var road_network = work_item.get("road_network")
-	var chunk_key = work_item.get("chunk_key")
-	var chunk_node = work_item.get("chunk_node")
-	var heightmap = work_item.get("heightmap")
-	var chunk_size = work_item.get("chunk_size", 500.0)
-
-	if not road_network or not chunk_node:
-		push_warning("[LoadingQueue] Invalid street_signs work item")
+## Generic road furniture executor (signs, lights, poles)
+func _exec_road_furniture(work_item: Dictionary, generator_class, method_name: String) -> bool:
+	if not _validate_road_network(work_item, work_item.type):
 		return false
 
-	# Import generator
-	const StreetSignGenerator = preload("res://scripts/generators/street_furniture/street_sign_generator.gd")
-
-	# Generate street signs for this chunk
-	var signs_node = StreetSignGenerator.create_chunk_signs(
-		road_network,
-		chunk_key,
-		chunk_size,
-		heightmap,
-		chunk_node
+	var result_node = generator_class.call(method_name,
+		work_item.road_network,
+		work_item.chunk_key,
+		work_item.get("chunk_size", GameConfig.CHUNK_SIZE),
+		work_item.get("heightmap"),
+		work_item.chunk_node
 	)
 
-	work_item["created_node"] = signs_node
-
-	return signs_node != null
-
-## Execute traffic sign creation (stop, yield, speed limit)
-func _execute_traffic_signs(work_item: Dictionary) -> bool:
-	var road_network = work_item.get("road_network")
-	var chunk_key = work_item.get("chunk_key")
-	var chunk_node = work_item.get("chunk_node")
-	var heightmap = work_item.get("heightmap")
-	var chunk_size = work_item.get("chunk_size", 500.0)
-
-	if not road_network or not chunk_node:
-		push_warning("[LoadingQueue] Invalid traffic_signs work item")
-		return false
-
-	const TrafficSignGenerator = preload("res://scripts/generators/street_furniture/traffic_sign_generator.gd")
-
-	var signs_node = TrafficSignGenerator.create_chunk_signs(
-		road_network,
-		chunk_key,
-		chunk_size,
-		heightmap,
-		chunk_node
-	)
-
-	work_item["created_node"] = signs_node
-	return signs_node != null
-
-## Execute highway sign creation (green directional signs)
-func _execute_highway_signs(work_item: Dictionary) -> bool:
-	var road_network = work_item.get("road_network")
-	var chunk_key = work_item.get("chunk_key")
-	var chunk_node = work_item.get("chunk_node")
-	var heightmap = work_item.get("heightmap")
-	var chunk_size = work_item.get("chunk_size", 500.0)
-
-	if not road_network or not chunk_node:
-		push_warning("[LoadingQueue] Invalid highway_signs work item")
-		return false
-
-	const HighwaySignGenerator = preload("res://scripts/generators/street_furniture/highway_sign_generator.gd")
-
-	var signs_node = HighwaySignGenerator.create_chunk_signs(
-		road_network,
-		chunk_key,
-		chunk_size,
-		heightmap,
-		chunk_node
-	)
-
-	work_item["created_node"] = signs_node
-	return signs_node != null
-
-## Execute traffic light creation at major intersections
-func _execute_traffic_lights(work_item: Dictionary) -> bool:
-	var road_network = work_item.get("road_network")
-	var chunk_key = work_item.get("chunk_key")
-	var chunk_node = work_item.get("chunk_node")
-	var heightmap = work_item.get("heightmap")
-	var chunk_size = work_item.get("chunk_size", 500.0)
-
-	if not road_network or not chunk_node:
-		push_warning("[LoadingQueue] Invalid traffic_lights work item")
-		return false
-
-	const TrafficLightGenerator = preload("res://scripts/generators/street_furniture/traffic_light_generator.gd")
-
-	var lights_node = TrafficLightGenerator.create_chunk_lights(
-		road_network,
-		chunk_key,
-		chunk_size,
-		heightmap,
-		chunk_node
-	)
-
-	work_item["created_node"] = lights_node
-	return lights_node != null
-
-## Execute utility pole creation along residential streets
-func _execute_utility_poles(work_item: Dictionary) -> bool:
-	var road_network = work_item.get("road_network")
-	var chunk_key = work_item.get("chunk_key")
-	var chunk_node = work_item.get("chunk_node")
-	var heightmap = work_item.get("heightmap")
-	var chunk_size = work_item.get("chunk_size", 500.0)
-
-	if not road_network or not chunk_node:
-		push_warning("[LoadingQueue] Invalid utility_poles work item")
-		return false
-
-	const UtilityPoleGenerator = preload("res://scripts/generators/street_furniture/utility_pole_generator.gd")
-
-	var poles_node = UtilityPoleGenerator.create_chunk_poles(
-		road_network,
-		chunk_key,
-		chunk_size,
-		heightmap,
-		chunk_node
-	)
-
-	work_item["created_node"] = poles_node
-	return poles_node != null
+	work_item["created_node"] = result_node
+	return result_node != null
 
 ## Update chunk loading progress
 func _update_chunk_progress(chunk_key: Vector2i) -> void:

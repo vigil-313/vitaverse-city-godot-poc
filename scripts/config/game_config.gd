@@ -94,6 +94,61 @@ const LIGHT_MAX_TOTAL: int = 600
 const WATER_LARGE_THRESHOLD: float = 50000.0
 
 # ========================================================================
+# ROAD GEOMETRY
+# ========================================================================
+
+## Standard sidewalk width (meters)
+const ROAD_SIDEWALK_WIDTH: float = 2.0
+
+## Curb width (meters)
+const ROAD_CURB_WIDTH: float = 0.25
+
+## Curb height (meters)
+const ROAD_CURB_HEIGHT: float = 0.15
+
+## Offset from road edge for street furniture (meters)
+const ROAD_FURNITURE_OFFSET: float = 3.5
+
+# ========================================================================
+# STREET FURNITURE LIMITS
+# ========================================================================
+
+## Maximum street lamps per chunk
+const FURNITURE_MAX_LAMPS: int = 30
+
+## Spacing between street lamps (meters)
+const FURNITURE_LAMP_SPACING: float = 60.0
+
+## Maximum street signs per chunk
+const FURNITURE_MAX_STREET_SIGNS: int = 40
+
+## Maximum traffic signs per chunk
+const FURNITURE_MAX_TRAFFIC_SIGNS: int = 50
+
+## Maximum highway signs per chunk
+const FURNITURE_MAX_HIGHWAY_SIGNS: int = 15
+
+## Maximum traffic lights per chunk
+const FURNITURE_MAX_TRAFFIC_LIGHTS: int = 30
+
+## Maximum utility poles per chunk
+const FURNITURE_MAX_UTILITY_POLES: int = 30
+
+## Utility pole spacing (meters)
+const FURNITURE_POLE_SPACING: float = 70.0
+
+# ========================================================================
+# VISUAL SETTINGS
+# ========================================================================
+
+## Light tier energy multiplier for MID tier
+const LIGHT_TIER_MID_MULTIPLIER: float = 0.85
+
+## Stylization blend range
+const STYLIZATION_MIN: float = 0.0
+const STYLIZATION_MAX: float = 1.0
+
+# ========================================================================
 # HELPER FUNCTIONS
 # ========================================================================
 

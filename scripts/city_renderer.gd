@@ -40,6 +40,7 @@ const LightingController = preload("res://scripts/visual/lighting_controller.gd"
 const PostProcessingStack = preload("res://scripts/visual/post_processing_stack.gd")
 const EnvironmentPresets = preload("res://scripts/visual/environment_presets.gd")
 const LightingLODManager = preload("res://scripts/visual/lighting_lod_manager.gd")
+const EnvironmentManager = preload("res://scripts/visual/environment_manager.gd")
 
 # ========================================================================
 # EXPORTS
@@ -72,6 +73,7 @@ var lighting_controller: LightingController
 var post_processing_stack: PostProcessingStack
 var environment_presets: EnvironmentPresets
 var lighting_lod_manager: LightingLODManager
+var environment_manager: EnvironmentManager
 
 # Scene references for visual systems
 var directional_light: DirectionalLight3D
@@ -111,8 +113,17 @@ func _ready():
 	road_network.build_network(osm_data.roads)
 	print("")
 
-	# Setup environment first (creates lighting/world_environment nodes)
-	_setup_environment()
+	# Setup environment first (creates lighting/world_environment/ground plane)
+	environment_manager = EnvironmentManager.new()
+	add_child(environment_manager)
+	environment_manager.setup(self)
+
+	# Get references for visual systems
+	directional_light = environment_manager.directional_light
+	world_environment = environment_manager.world_environment
+
+	# Setup anti-aliasing on main viewport
+	environment_manager.setup_anti_aliasing(get_viewport())
 
 	# Initialize visual systems (requires lighting/environment to be set up)
 	_initialize_visual_systems()
@@ -122,12 +133,6 @@ func _ready():
 
 	# Initialize components
 	_initialize_components(osm_data)
-
-	# Create fallback ground plane (deep below terrain, only visible through gaps)
-	_create_ground_plane()
-
-	# Setup anti-aliasing
-	_setup_anti_aliasing()
 
 	print("")
 	print("✅ City rendering complete (chunked streaming enabled)!")
@@ -410,122 +415,6 @@ func _on_debug_settings_reset():
 func _on_chunk_viz_toggled(enabled: bool):
 	# Chunk visualization toggled - DebugUI handles the visualization
 	pass
-
-# ========================================================================
-# ENVIRONMENT SETUP
-# ========================================================================
-
-func _setup_environment():
-	# PERFORMANCE MODE: Set to false for visual quality (as user wants)
-	var performance_mode = false  # User prioritizes visual quality
-
-	# Directional light (sun) - Store reference for visual systems
-	directional_light = DirectionalLight3D.new()
-	directional_light.position = Vector3(0, 100, 0)
-	directional_light.rotation_degrees = Vector3(-45, -30, 0)  # Slightly higher angle
-	directional_light.shadow_enabled = true
-	directional_light.light_energy = 1.5  # Brighter!
-	directional_light.light_color = Color(1.0, 1.0, 0.98)  # Pure white with slight warmth
-
-	if performance_mode:
-		# PERFORMANCE: Simple 2-split shadows (much faster)
-		directional_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-		directional_light.directional_shadow_max_distance = 300.0  # Shorter distance
-		print("   ⚡ Performance mode: 2-split shadows, 300m distance")
-	else:
-		# QUALITY: High-quality 4-split shadows (slower)
-		directional_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-		directional_light.directional_shadow_split_1 = 0.05
-		directional_light.directional_shadow_split_2 = 0.15
-		directional_light.directional_shadow_split_3 = 0.35
-		directional_light.directional_shadow_max_distance = 500.0
-
-	directional_light.shadow_bias = 0.02
-	directional_light.shadow_normal_bias = 1.0
-
-	add_child(directional_light)
-
-	# Environment
-	var env = Environment.new()
-	env.background_mode = Environment.BG_SKY
-
-	# Sky - VIBRANT for flat/low-poly
-	var sky = Sky.new()
-	var sky_material = ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color.html("#87CEEB")  # Bright sky blue
-	sky_material.sky_horizon_color = Color.html("#E0F7FF")  # Very light blue
-	sky_material.ground_bottom_color = Color(0.4, 0.4, 0.4)
-	sky_material.ground_horizon_color = Color(0.7, 0.7, 0.7)
-	sky.sky_material = sky_material
-	env.sky = sky
-
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.9  # Higher ambient light for bright look
-
-	# Fog - LIGHT for atmospheric depth (optional, can disable)
-	env.fog_enabled = true
-	env.fog_light_color = Color.html("#E0F7FF")  # Match sky horizon
-	env.fog_light_energy = 1.2  # Bright fog
-	env.fog_density = 0.0004  # Reduced density (more subtle)
-
-	if performance_mode:
-		# PERFORMANCE: SSAO disabled (big FPS boost!)
-		env.ssao_enabled = false
-		print("   ⚡ Performance mode: SSAO disabled")
-	else:
-		# QUALITY: SSAO enabled
-		env.ssao_enabled = true
-		env.ssao_radius = 2.0
-		env.ssao_intensity = 1.5
-		env.ssao_power = 2.0
-		env.ssao_detail = 0.5
-
-	if performance_mode:
-		# PERFORMANCE: Glow disabled (moderate FPS boost)
-		env.glow_enabled = false
-		print("   ⚡ Performance mode: Glow/Bloom disabled")
-	else:
-		# QUALITY: Glow/Bloom enabled
-		env.glow_enabled = true
-		env.glow_intensity = 0.3
-		env.glow_strength = 0.8
-		env.glow_bloom = 0.2
-		env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
-
-	# Store reference for visual systems
-	world_environment = WorldEnvironment.new()
-	world_environment.environment = env
-	add_child(world_environment)
-
-## Create deep fallback ground plane (beneath terrain)
-## This is only visible if terrain has gaps - normally not seen
-func _create_ground_plane():
-	var plane_mesh = PlaneMesh.new()
-	plane_mesh.size = Vector2(12000, 12000)  # Larger than terrain bounds
-	plane_mesh.subdivide_width = 4
-	plane_mesh.subdivide_depth = 4
-
-	var mesh_instance = MeshInstance3D.new()
-	mesh_instance.mesh = plane_mesh
-	mesh_instance.position = Vector3(0, -50, 0)  # Deep below terrain
-
-	# Dark material - only visible through gaps
-	var material = StandardMaterial3D.new()
-	material.albedo_color = Color(0.1, 0.08, 0.06)  # Very dark brown
-	material.roughness = 1.0
-	material.metallic = 0.0
-
-	mesh_instance.material_override = material
-	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-
-	add_child(mesh_instance)
-
-func _setup_anti_aliasing():
-	# Enable anti-aliasing (balanced - not too blurry)
-	get_viewport().msaa_3d = Viewport.MSAA_4X  # Multi-sample AA for geometry edges
-	get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED  # Disabled FXAA (too blurry)
-	get_viewport().use_taa = false  # Disabled TAA (causes blur)
-	print("   ✨ Anti-aliasing: MSAA 4x only (balanced)")
 
 # ========================================================================
 # RETRO VIEWPORT SETUP
