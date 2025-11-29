@@ -62,10 +62,11 @@ static func create_building(osm_data: Dictionary, parent: Node, detailed: bool =
 	building_mesh.position.y = base_elevation
 	building.add_child(building_mesh)
 
-	# Add building label
-	var label_text = OSMParser.get_building_label(osm_data)
-	var full_label = OSMParser.get_full_building_label(osm_data, levels, height)
-	LabelGenerator.add_label(building, full_label, height, base_elevation)
+	# Add building label - only for large landmarks (tall or named important buildings)
+	var is_landmark = height > 40.0 or (height > 25.0 and building_name != "")
+
+	if is_landmark and building_name != "":
+		LabelGenerator.add_label(building, building_name, height, base_elevation)
 
 	parent.add_child(building)
 	return building

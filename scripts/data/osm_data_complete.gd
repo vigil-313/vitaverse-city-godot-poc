@@ -184,17 +184,20 @@ func _parse_complete_building(element: Dictionary, nodes: Dictionary) -> Diction
 	return building_data
 
 ## Parse complete road with ALL available tags
+## Now preserves node IDs for intersection detection
 func _parse_complete_road(element: Dictionary, nodes: Dictionary) -> Dictionary:
 	var tags = element.get("tags", {})
 	var node_refs = element.get("nodes", [])
 
-	# Get path coordinates
+	# Get path coordinates AND preserve node IDs
 	var path = []
+	var node_ids = []  # Preserve OSM node IDs for intersection detection
 	for node_id in node_refs:
 		if nodes.has(node_id):
 			var node = nodes[node_id]
 			var pos = _latlon_to_meters(node.get("lat"), node.get("lon"))
 			path.append(pos)
+			node_ids.append(node_id)
 
 	if path.size() < 2:
 		return {}  # Invalid path
@@ -202,6 +205,7 @@ func _parse_complete_road(element: Dictionary, nodes: Dictionary) -> Dictionary:
 	var road_data = {
 		"id": element.get("id"),
 		"path": path,
+		"node_ids": node_ids,  # NEW: OSM node IDs for each path point
 		"name": tags.get("name", ""),
 		"highway_type": tags.get("highway", ""),
 		"lanes": int(tags.get("lanes", 0)),

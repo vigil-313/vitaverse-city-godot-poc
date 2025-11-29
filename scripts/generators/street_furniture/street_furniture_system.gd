@@ -27,6 +27,7 @@ const BOLLARD_CHANCE = 0.10
 ## buildings_data: Array of building data in this chunk
 ## roads_data: Array of road data in this chunk
 ## parent: Node to parent furniture to
+## NOTE: Lamps are now handled separately by StreetLampPlacer using the road network
 static func generate_furniture_for_chunk(
 	buildings_data: Array,
 	roads_data: Array,
@@ -41,13 +42,12 @@ static func generate_furniture_for_chunk(
 	# Track placed furniture positions to avoid overlap
 	var placed_positions: Array[Vector3] = []
 
-	# Place furniture near buildings
+	# Place furniture near buildings (benches, trash cans, bike racks, bollards)
 	for building_data in buildings_data:
 		_place_furniture_near_building(building_data, parent, rng, placed_positions, heightmap)
 
-	# Place lamps along roads
-	for road_data in roads_data:
-		_place_lamps_along_road(road_data, parent, rng, placed_positions, heightmap)
+	# NOTE: Lamps are now placed by StreetLampPlacer using road network graph
+	# This prevents duplicate lamps at intersections and enables proper spacing
 
 ## Place furniture items near a building's entrance area
 static func _place_furniture_near_building(

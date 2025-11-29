@@ -17,6 +17,7 @@ extends Node3D
 
 # Data layer
 const OSMDataComplete = preload("res://scripts/data/osm_data_complete.gd")
+const RoadNetworkBuilder = preload("res://scripts/data/road_network_builder.gd")
 
 # Terrain layer
 const HeightmapLoader = preload("res://scripts/terrain/heightmap_loader.gd")
@@ -61,6 +62,9 @@ var feature_factory: FeatureFactory
 # Terrain system
 var heightmap_loader: HeightmapLoader
 
+# Road network (graph structure for intersections)
+var road_network: RoadNetworkBuilder
+
 # Visual systems
 var visual_manager: VisualManager
 var material_library: MaterialLibrary
@@ -100,6 +104,11 @@ func _ready():
 	print("   🛣️  Roads: ", osm_data.roads.size())
 	print("   🌳 Parks: ", osm_data.parks.size())
 	print("   💧 Water: ", osm_data.water.size())
+	print("")
+
+	# Build road network graph (intersections + segments)
+	road_network = RoadNetworkBuilder.new()
+	road_network.build_network(osm_data.roads)
 	print("")
 
 	# Setup environment first (creates lighting/world_environment nodes)
@@ -197,10 +206,11 @@ func _initialize_components(osm_data: OSMDataComplete):
 	print("🔧 Initializing components...")
 	print("")
 
-	# 1. Create FeatureFactory and set MaterialLibrary + Heightmap
+	# 1. Create FeatureFactory and set MaterialLibrary + Heightmap + RoadNetwork
 	feature_factory = FeatureFactory.new()
 	feature_factory.material_library = material_library
 	feature_factory.heightmap = heightmap_loader
+	feature_factory.road_network = road_network  # Enable batched road rendering
 
 	# 2. Create ChunkManager with factory
 	chunk_manager = ChunkManager.new(feature_factory, self)
